@@ -1,0 +1,276 @@
+/**
+ * @pify/pretty — compact, theme-aware rendering for pi's built-in tools.
+ *
+ * Pure rendering: every tool is re-registered with its ORIGINAL execute
+ * delegated untouched (pi's official built-in-tool-renderer pattern); only
+ * renderCall/renderResult change. Collapsed one-line summaries expand with
+ * pi's standard toggle; read results get syntax highlighting via pi's own
+ * highlightCode; edit diffs are colorized with +N −M stats. Each renderer
+ * toggles independently with /pretty <tool> (zentui's opt-in principle),
+ * persisted per session.
+ *
+ * Design synthesis: compact summary shapes (ykn0309/pi-pretty-tui),
+ * delegate-execute renderer pattern (pi examples), theme-aware minimalism
+ * (giladbarnea/pi-pretty-bash), per-surface opt-in (pi-zentui).
+ */
+import {
+  createBashTool,
+  createEditTool,
+  createFindTool,
+  createGrepTool,
+  createLsTool,
+  createReadTool,
+  createWriteTool,
+  getLanguageFromPath,
+  highlightCode,
+  type ExtensionAPI,
+  type ExtensionContext,
+} from "@earendil-works/pi-coding-agent";
+import { Text } from "@earendil-works/pi-tui";
+
+import { PRETTY_CONFIG, isPrettyTool, replayBranch, statusLines, toggleTool } from "../src/config.ts";
+import { colorizeDiff, diffStats, statsLabel } from "../src/diff.ts";
+import {
+  bashCall,
+  bashSummary,
+  editCall,
+  listCall,
+  matchSummary,
+  readCall,
+  readSummary,
+  searchCall,
+  writeCall,
+} from "../src/summary.ts";
+import {
+  DEFAULT_CONFIG,
+  isRecord,
+  textContent,
+  type PrettyConfig,
+  type PrettyTool,
+  type ThemeLike,
+} from "../src/types.ts";
+
+const PREVIEW_LINES = 12;
+
+type AnyTool = {
+  name: string;
+  description: string;
+  parameters: unknown;
+  execute: (...args: never[]) => unknown;
+  [key: string]: unknown;
+};
+
+export default function pretty(pi: ExtensionAPI) {
+  let config: PrettyConfig = DEFAULT_CONFIG;
+  let originals: Record<PrettyTool, AnyTool> | null = null;
+
+  function isFailed(result: unknown): boolean {
+    return isRecord(result) && result.isError === true;
+  }
+
+  function clip(text: string, expanded: boolean): string {
+    if (expanded) return text;
+    const lines = text.split("\n");
+    if (lines.length <= PREVIEW_LINES) return text;
+    return `${lines.slice(0, PREVIEW_LINES).join("\n")}\n…`;
+  }
+
+  function buildOriginals(cwd: string): Record<PrettyTool, AnyTool> {
+    return {
+      read: createReadTool(cwd) as unknown as AnyTool,
+      bash: createBashTool(cwd) as unknown as AnyTool,
+      edit: createEditTool(cwd) as unknown as AnyTool,
+      write: createWriteTool(cwd) as unknown as AnyTool,
+      grep: createGrepTool(cwd) as unknown as AnyTool,
+      find: createFindTool(cwd) as unknown as AnyTool,
+      ls: createLsTool(cwd) as unknown as AnyTool,
+    };
+  }
+
+  /** Renderers per tool; delegate execution to the original untouched. */
+  function renderersFor(tool: PrettyTool): Record<string, unknown> {
+    switch (tool) {
+      case "read":
+        return {
+          renderCall: (args: { path?: string; offset?: number; limit?: number }, theme: ThemeLike) =>
+            new Text(readCall(theme, args ?? {}), 0, 0),
+          renderResult: (
+            result: unknown,
+            options: { expanded?: boolean; isPartial?: boolean },
+            theme: ThemeLike,
+          ) => {
+            if (options.isPartial) return new Text(theme.fg("warning", "Reading…"), 0, 0);
+            const output = textContent(result);
+            const failed = isFailed(result);
+            const truncated =
+              isRecord(result) && isRecord(result.details) && isRecord(result.details.truncation)
+                ? result.details.truncation.truncated === true
+                : false;
+            const summary = readSummary(theme, output, truncated, failed);
+            if (!options.expanded || failed) return new Text(summary, 0, 0);
+            const path =
+              isRecord(result) && isRecord(result.details) && typeof result.details.path === "string"
+                ? result.details.path
+                : "";
+            const language = path ? getLanguageFromPath(path) : undefined;
+            let body = output;
+            try {
+              if (language) body = highlightCode(output, language).join("\n");
+            } catch {
+              // highlighting is best-effort
+            }
+            return new Text(`${summary}\n${body}`, 0, 0);
+          },
+        };
+      case "bash":
+        return {
+          renderCall: (args: { command?: string }, theme: ThemeLike, context: { expanded?: boolean }) =>
+            new Text(bashCall(theme, args?.command ?? "", context?.expanded === true), 0, 0),
+          renderResult: (
+            result: unknown,
+            options: { expanded?: boolean; isPartial?: boolean },
+            theme: ThemeLike,
+          ) => {
+            const output = textContent(result);
+            if (options.isPartial) {
+              return new Text(`${theme.fg("warning", "Running…")}\n${clip(output, false)}`, 0, 0);
+            }
+            const failed = isFailed(result);
+            const summary = bashSummary(theme, output, failed);
+            const body = output && (options.expanded || failed) ? `\n${clip(output, options.expanded === true)}` : "";
+            return new Text(summary + body, 0, 0);
+          },
+        };
+      case "edit":
+        return {
+          renderCall: (args: { path?: string }, theme: ThemeLike) => new Text(editCall(theme, args ?? {}), 0, 0),
+          renderResult: (
+            result: unknown,
+            options: { expanded?: boolean; isPartial?: boolean },
+            theme: ThemeLike,
+          ) => {
+            if (options.isPartial) return new Text(theme.fg("warning", "Editing…"), 0, 0);
+            if (isFailed(result)) {
+              return new Text(theme.fg("error", textContent(result).split("\n")[0] || "Edit failed"), 0, 0);
+            }
+            const diff =
+              isRecord(result) && isRecord(result.details) && typeof result.details.diff === "string"
+                ? result.details.diff
+                : "";
+            const stats = statsLabel(theme, diffStats(diff));
+            if (!options.expanded) return new Text(stats, 0, 0);
+            return new Text(`${stats}\n${colorizeDiff(theme, diff)}`, 0, 0);
+          },
+        };
+      case "write":
+        return {
+          renderCall: (args: { path?: string; content?: string }, theme: ThemeLike) =>
+            new Text(writeCall(theme, args ?? {}), 0, 0),
+          renderResult: (
+            result: unknown,
+            options: { expanded?: boolean; isPartial?: boolean },
+            theme: ThemeLike,
+          ) => {
+            if (options.isPartial) return new Text(theme.fg("warning", "Writing…"), 0, 0);
+            if (isFailed(result)) {
+              return new Text(theme.fg("error", textContent(result).split("\n")[0] || "Write failed"), 0, 0);
+            }
+            return new Text(theme.fg("success", "✓ written"), 0, 0);
+          },
+        };
+      case "grep":
+      case "find":
+        return {
+          renderCall: (
+            args: { pattern?: string; path?: string; glob?: string },
+            theme: ThemeLike,
+          ) => new Text(searchCall(theme, tool === "grep" ? "Grep" : "Find", args ?? {}), 0, 0),
+          renderResult: (
+            result: unknown,
+            options: { expanded?: boolean; isPartial?: boolean },
+            theme: ThemeLike,
+          ) => {
+            if (options.isPartial) return new Text(theme.fg("warning", "Searching…"), 0, 0);
+            const output = textContent(result);
+            const failed = isFailed(result);
+            const summary = matchSummary(
+              theme,
+              output,
+              failed,
+              tool === "grep" ? { one: "match", many: "matches" } : { one: "result", many: "results" },
+            );
+            if (!options.expanded || failed || !output) return new Text(summary, 0, 0);
+            return new Text(`${summary}\n${clip(output, true)}`, 0, 0);
+          },
+        };
+      case "ls":
+        return {
+          renderCall: (args: { path?: string }, theme: ThemeLike) => new Text(listCall(theme, args ?? {}), 0, 0),
+          renderResult: (
+            result: unknown,
+            options: { expanded?: boolean; isPartial?: boolean },
+            theme: ThemeLike,
+          ) => {
+            if (options.isPartial) return new Text(theme.fg("warning", "Listing…"), 0, 0);
+            const output = textContent(result);
+            const failed = isFailed(result);
+            const summary = matchSummary(theme, output, failed, { one: "entry", many: "entries" });
+            if (!options.expanded || failed) return new Text(summary, 0, 0);
+            return new Text(`${summary}\n${clip(output, true)}`, 0, 0);
+          },
+        };
+    }
+  }
+
+  /** (Re-)register one tool with or without pretty renderers. */
+  function applyTool(tool: PrettyTool): void {
+    if (!originals) return;
+    const original = originals[tool];
+    const withPretty = !config.disabled.includes(tool);
+    pi.registerTool({
+      ...original,
+      ...(withPretty ? renderersFor(tool) : {}),
+    } as never);
+  }
+
+  function applyAll(): void {
+    if (!originals) return;
+    for (const tool of Object.keys(originals) as PrettyTool[]) applyTool(tool);
+  }
+
+  // ── Lifecycle ────────────────────────────────────────────────────────
+
+  pi.on("session_start", async (_event, ctx) => {
+    originals = buildOriginals(ctx.cwd);
+    config = replayBranch(ctx.sessionManager.getBranch() as never);
+    applyAll();
+  });
+
+  pi.on("session_tree", async (_event, ctx) => {
+    config = replayBranch(ctx.sessionManager.getBranch() as never);
+    applyAll();
+  });
+
+  // ── Command ──────────────────────────────────────────────────────────
+
+  pi.registerCommand("pretty", {
+    description: "Toggle pretty tool rendering: /pretty [read|bash|edit|write|grep|find|ls]",
+    handler: async (args, ctx: ExtensionContext) => {
+      if (!ctx.hasUI) return;
+      const target = (args ?? "").trim().toLowerCase();
+      if (!target) {
+        ctx.ui.notify(`Pretty renderers\n${statusLines(config).join("\n")}\nToggle with /pretty <tool>`, "info");
+        return;
+      }
+      if (!isPrettyTool(target)) {
+        ctx.ui.notify(`Unknown tool "${target}". Tools: read, bash, edit, write, grep, find, ls`, "warning");
+        return;
+      }
+      config = toggleTool(config, target);
+      pi.appendEntry(PRETTY_CONFIG, config);
+      applyTool(target);
+      const on = !config.disabled.includes(target);
+      ctx.ui.notify(`pretty ${target}: ${on ? "on" : "off"}`, "info");
+    },
+  });
+}

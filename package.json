@@ -1,6 +1,6 @@
 {
   "name": "@pify/pretty",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Compact, theme-aware rendering for pi's built-in tools: one-line summaries, syntax-highlighted reads, colorized diffs — behavior untouched",
   "keywords": [
     "pi-package",
@@ -31,7 +31,9 @@
     "LICENSE"
   ],
   "pi": {
-    "extensions": ["./extensions/pretty.ts"]
+    "extensions": [
+      "./extensions/pretty.ts"
+    ]
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -43,8 +45,12 @@
     "@earendil-works/pi-tui": "*"
   },
   "peerDependenciesMeta": {
-    "@earendil-works/pi-coding-agent": { "optional": true },
-    "@earendil-works/pi-tui": { "optional": true }
+    "@earendil-works/pi-coding-agent": {
+      "optional": true
+    },
+    "@earendil-works/pi-tui": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@earendil-works/pi-coding-agent": "^0.84.4",

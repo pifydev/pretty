@@ -12,6 +12,9 @@ import {
   writeCall,
 } from "../src/summary.ts";
 import { colorizeDiff, diffStats, statsLabel } from "../src/diff.ts";
+import { DEFAULT_LIMITS, preview } from "../src/preview.ts";
+import { applyCommand, parsePrettyCommand } from "../src/config.ts";
+import { PRETTY_TOOLS, type PrettyTool } from "../src/types.ts";
 import { PRETTY_CONFIG, replayBranch, statusLines, toggleTool } from "../src/config.ts";
 import { DEFAULT_CONFIG, countLines, textContent, type ThemeLike } from "../src/types.ts";
 
@@ -90,4 +93,53 @@ test("textContent and countLines helpers", () => {
   assert.equal(textContent({ content: [{ type: "text", text: "a" }, { type: "image" }, { type: "text", text: "b" }] }), "a\nb");
   assert.equal(textContent(null), "");
   assert.equal(countLines("a\n\nb\n"), 2);
+});
+
+test("v0.2 preview caps collapsed and expanded bodies", () => {
+  const short = "a\nb\nc";
+  assert.equal(preview(short, false), short);
+  assert.equal(preview(short, true), short);
+
+  const long = Array.from({ length: 20 }, (_, i) => `line ${i + 1}`).join("\n");
+  const collapsed = preview(long, false);
+  assert.equal(collapsed.split("\n").length, DEFAULT_LIMITS.collapsed + 1);
+  assert.ok(collapsed.endsWith("… +8 more lines"));
+
+  // expanded is generous but still bounded — the old code capped nothing here
+  const huge = Array.from({ length: 500 }, (_, i) => `line ${i + 1}`).join("\n");
+  const expanded = preview(huge, true);
+  assert.equal(expanded.split("\n").length, DEFAULT_LIMITS.expanded + 1);
+  assert.ok(expanded.endsWith("… +300 more lines"));
+  assert.equal(preview("x\ny", false, { collapsed: 1, expanded: 1 }), "x\n… +1 more line");
+});
+
+test("v0.2 diffStats counts removals that look like headers", () => {
+  const diff = ["--- a/file.md", "+++ b/file.md", "@@ -1,3 +1,3 @@", " keep", "---- rule", "+++ new", "-gone", "+added"].join("\n");
+  assert.deepEqual(diffStats(diff), { added: 2, removed: 2 });
+  // headers before the first hunk are still skipped
+  assert.deepEqual(diffStats("--- a\n+++ b"), { added: 0, removed: 0 });
+});
+
+test("v0.2 /pretty routes: aliases, multi-tool, on/off, reset", () => {
+  assert.deepEqual(parsePrettyCommand(""), { kind: "status" });
+  assert.deepEqual(parsePrettyCommand(" STATUS "), { kind: "status" });
+  assert.deepEqual(parsePrettyCommand("list"), { kind: "status" });
+  assert.deepEqual(parsePrettyCommand("bash grep"), { kind: "toggle", tools: ["bash", "grep"] });
+  assert.deepEqual(parsePrettyCommand("search"), { kind: "toggle", tools: ["grep"] });
+  assert.deepEqual(parsePrettyCommand("off"), { kind: "set", tools: [...PRETTY_TOOLS], on: false });
+  assert.deepEqual(parsePrettyCommand("on read"), { kind: "set", tools: ["read"], on: true });
+  assert.deepEqual(parsePrettyCommand("reset"), { kind: "reset" });
+  assert.equal(parsePrettyCommand("nope").kind, "error");
+
+  let config = { disabled: [] as PrettyTool[] };
+  ({ config } = applyCommand(config, parsePrettyCommand("bash grep")));
+  assert.deepEqual(config.disabled, ["bash", "grep"]);
+  const enabled = applyCommand(config, parsePrettyCommand("on bash"));
+  assert.deepEqual(enabled.config.disabled, ["grep"]);
+  assert.deepEqual(enabled.changed, ["bash"]);
+  // turning on something already on changes nothing
+  assert.deepEqual(applyCommand(enabled.config, parsePrettyCommand("on bash")).changed, []);
+  const off = applyCommand(enabled.config, parsePrettyCommand("off"));
+  assert.equal(off.config.disabled.length, PRETTY_TOOLS.length);
+  assert.deepEqual(applyCommand(off.config, parsePrettyCommand("reset")).config.disabled, []);
 });

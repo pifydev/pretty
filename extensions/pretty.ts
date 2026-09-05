@@ -28,8 +28,16 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 
-import { PRETTY_CONFIG, isPrettyTool, replayBranch, statusLines, toggleTool } from "../src/config.ts";
+import {
+  PRETTY_CONFIG,
+  PRETTY_USAGE,
+  applyCommand,
+  parsePrettyCommand,
+  replayBranch,
+  statusLines,
+} from "../src/config.ts";
 import { colorizeDiff, diffStats, statsLabel } from "../src/diff.ts";
+import { preview } from "../src/preview.ts";
 import {
   bashCall,
   bashSummary,
@@ -50,8 +58,6 @@ import {
   type ThemeLike,
 } from "../src/types.ts";
 
-const PREVIEW_LINES = 12;
-
 type AnyTool = {
   name: string;
   description: string;
@@ -66,13 +72,6 @@ export default function pretty(pi: ExtensionAPI) {
 
   function isFailed(result: unknown): boolean {
     return isRecord(result) && result.isError === true;
-  }
-
-  function clip(text: string, expanded: boolean): string {
-    if (expanded) return text;
-    const lines = text.split("\n");
-    if (lines.length <= PREVIEW_LINES) return text;
-    return `${lines.slice(0, PREVIEW_LINES).join("\n")}\n…`;
   }
 
   function buildOriginals(cwd: string): Record<PrettyTool, AnyTool> {
@@ -133,11 +132,11 @@ export default function pretty(pi: ExtensionAPI) {
           ) => {
             const output = textContent(result);
             if (options.isPartial) {
-              return new Text(`${theme.fg("warning", "Running…")}\n${clip(output, false)}`, 0, 0);
+              return new Text(`${theme.fg("warning", "Running…")}\n${preview(output, false)}`, 0, 0);
             }
             const failed = isFailed(result);
             const summary = bashSummary(theme, output, failed);
-            const body = output && (options.expanded || failed) ? `\n${clip(output, options.expanded === true)}` : "";
+            const body = output && (options.expanded || failed) ? `\n${preview(output, options.expanded === true)}` : "";
             return new Text(summary + body, 0, 0);
           },
         };
@@ -159,7 +158,7 @@ export default function pretty(pi: ExtensionAPI) {
                 : "";
             const stats = statsLabel(theme, diffStats(diff));
             if (!options.expanded) return new Text(stats, 0, 0);
-            return new Text(`${stats}\n${colorizeDiff(theme, diff)}`, 0, 0);
+            return new Text(`${stats}\n${colorizeDiff(theme, preview(diff, true))}`, 0, 0);
           },
         };
       case "write":
@@ -200,7 +199,7 @@ export default function pretty(pi: ExtensionAPI) {
               tool === "grep" ? { one: "match", many: "matches" } : { one: "result", many: "results" },
             );
             if (!options.expanded || failed || !output) return new Text(summary, 0, 0);
-            return new Text(`${summary}\n${clip(output, true)}`, 0, 0);
+            return new Text(`${summary}\n${preview(output, true)}`, 0, 0);
           },
         };
       case "ls":
@@ -216,7 +215,7 @@ export default function pretty(pi: ExtensionAPI) {
             const failed = isFailed(result);
             const summary = matchSummary(theme, output, failed, { one: "entry", many: "entries" });
             if (!options.expanded || failed) return new Text(summary, 0, 0);
-            return new Text(`${summary}\n${clip(output, true)}`, 0, 0);
+            return new Text(`${summary}\n${preview(output, true)}`, 0, 0);
           },
         };
     }
@@ -254,23 +253,31 @@ export default function pretty(pi: ExtensionAPI) {
   // ── Command ──────────────────────────────────────────────────────────
 
   pi.registerCommand("pretty", {
-    description: "Toggle pretty tool rendering: /pretty [read|bash|edit|write|grep|find|ls]",
+    description: "Pretty tool rendering: /pretty [status | on|off [tool…] | reset | <tool…>]",
     handler: async (args, ctx: ExtensionContext) => {
-      if (!ctx.hasUI) return;
-      const target = (args ?? "").trim().toLowerCase();
-      if (!target) {
-        ctx.ui.notify(`Pretty renderers\n${statusLines(config).join("\n")}\nToggle with /pretty <tool>`, "info");
+      const command = parsePrettyCommand(args ?? "");
+      if (command.kind === "error") {
+        if (ctx.hasUI) ctx.ui.notify(command.message, "warning");
         return;
       }
-      if (!isPrettyTool(target)) {
-        ctx.ui.notify(`Unknown tool "${target}". Tools: read, bash, edit, write, grep, find, ls`, "warning");
+      if (command.kind === "status") {
+        if (ctx.hasUI) {
+          ctx.ui.notify(`Pretty renderers\n${statusLines(config).join("\n")}\n${PRETTY_USAGE}`, "info");
+        }
         return;
       }
-      config = toggleTool(config, target);
+
+      const { config: next, changed } = applyCommand(config, command);
+      config = next;
       pi.appendEntry(PRETTY_CONFIG, config);
-      applyTool(target);
-      const on = !config.disabled.includes(target);
-      ctx.ui.notify(`pretty ${target}: ${on ? "on" : "off"}`, "info");
+      for (const tool of changed) applyTool(tool);
+      if (!ctx.hasUI) return;
+      ctx.ui.notify(
+        changed.length === 0
+          ? "Nothing changed."
+          : changed.map((t) => `pretty ${t}: ${config.disabled.includes(t) ? "off" : "on"}`).join("\n"),
+        "info",
+      );
     },
   });
 }

@@ -5,12 +5,21 @@ export interface DiffStats {
   removed: number;
 }
 
-/** Count +/− lines in a display diff (ignores headers like +++/---). */
+/**
+ * Count +/− lines in a display diff. File headers (+++/---) are skipped, but
+ * only where they can actually appear — before the first hunk. Inside a hunk,
+ * a removed line whose content starts with `--` is a real removal.
+ */
 export function diffStats(diff: string): DiffStats {
   let added = 0;
   let removed = 0;
+  let inHunk = false;
   for (const line of diff.split("\n")) {
-    if (line.startsWith("+++") || line.startsWith("---")) continue;
+    if (line.startsWith("@@")) {
+      inHunk = true;
+      continue;
+    }
+    if (!inHunk && (line.startsWith("+++") || line.startsWith("---"))) continue;
     if (line.startsWith("+")) added++;
     else if (line.startsWith("-")) removed++;
   }

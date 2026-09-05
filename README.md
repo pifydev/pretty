@@ -22,9 +22,17 @@ Expand with pi's standard toggle (Ctrl+O on a tool block). Failures always show 
 Each renderer toggles independently (persisted per session):
 
 ```
-/pretty            # show which renderers are on
-/pretty bash       # toggle one back to pi's default rendering
+/pretty                 # show which renderers are on
+/pretty bash            # toggle one back to pi's default rendering
+/pretty bash grep       # toggle several at once (v0.2)
+/pretty off             # everything back to pi's rendering (v0.2)
+/pretty on read         # explicit on/off instead of toggling (v0.2)
+/pretty reset           # all renderers back on (v0.2)
 ```
+
+Aliases are accepted where they're obvious: `list`/`dir` → `ls`, `search`/`rg` → `grep`, `cat` → `read`, `sh`/`shell` → `bash`.
+
+Expanded bodies are capped at 200 lines (v0.2) — a 5,000-line diff or grep result used to render in full and scroll the conversation away.
 
 ## How it works
 

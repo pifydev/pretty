@@ -21,12 +21,15 @@ import {
   createLsTool,
   createReadTool,
   createWriteTool,
+  getAgentDir,
   getLanguageFromPath,
   highlightCode,
   type ExtensionAPI,
   type ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 
 import {
   PRETTY_CONFIG,
@@ -37,7 +40,8 @@ import {
   statusLines,
 } from "../src/config.ts";
 import { colorizeDiff, diffStats, statsLabel } from "../src/diff.ts";
-import { preview } from "../src/preview.ts";
+import { limitsFrom, preview } from "../src/preview.ts";
+import { DEFAULT_SETTINGS, formatSettings, resolveSettings, type PrettySettings } from "../src/settings.ts";
 import {
   bashCall,
   bashSummary,
@@ -68,6 +72,36 @@ type AnyTool = {
 
 export default function pretty(pi: ExtensionAPI) {
   let config: PrettyConfig = DEFAULT_CONFIG;
+  let settings: PrettySettings = DEFAULT_SETTINGS;
+  let settingsSource: string | null = null;
+  let settingsWarnings: string[] = [];
+
+  /** Project settings win over global ones; neither is required. */
+  function loadSettings(cwd: string): void {
+    const candidates = [join(cwd, ".pi", "pretty.json"), join(getAgentDir(), "pretty.json")];
+    for (const file of candidates) {
+      let raw: string;
+      try {
+        raw = readFileSync(file, "utf8");
+      } catch {
+        continue;
+      }
+      try {
+        const parsed = resolveSettings(JSON.parse(raw));
+        settings = parsed.settings;
+        settingsWarnings = parsed.warnings;
+        settingsSource = file;
+      } catch (err) {
+        settings = DEFAULT_SETTINGS;
+        settingsSource = null;
+        settingsWarnings = [`${file}: ${err instanceof Error ? err.message : String(err)}`];
+      }
+      return;
+    }
+    settings = DEFAULT_SETTINGS;
+    settingsSource = null;
+    settingsWarnings = [];
+  }
   let originals: Record<PrettyTool, AnyTool> | null = null;
 
   function isFailed(result: unknown): boolean {
@@ -132,11 +166,11 @@ export default function pretty(pi: ExtensionAPI) {
           ) => {
             const output = textContent(result);
             if (options.isPartial) {
-              return new Text(`${theme.fg("warning", "Running…")}\n${preview(output, false)}`, 0, 0);
+              return new Text(`${theme.fg("warning", "Running…")}\n${preview(output, false, limitsFrom(settings))}`, 0, 0);
             }
             const failed = isFailed(result);
             const summary = bashSummary(theme, output, failed);
-            const body = output && (options.expanded || failed) ? `\n${preview(output, options.expanded === true)}` : "";
+            const body = output && (options.expanded || failed) ? `\n${preview(output, options.expanded === true, limitsFrom(settings))}` : "";
             return new Text(summary + body, 0, 0);
           },
         };
@@ -158,7 +192,7 @@ export default function pretty(pi: ExtensionAPI) {
                 : "";
             const stats = statsLabel(theme, diffStats(diff));
             if (!options.expanded) return new Text(stats, 0, 0);
-            return new Text(`${stats}\n${colorizeDiff(theme, preview(diff, true))}`, 0, 0);
+            return new Text(`${stats}\n${colorizeDiff(theme, preview(diff, true, { collapsed: settings.collapsedLines, expanded: settings.diffLines }))}`, 0, 0);
           },
         };
       case "write":
@@ -199,7 +233,7 @@ export default function pretty(pi: ExtensionAPI) {
               tool === "grep" ? { one: "match", many: "matches" } : { one: "result", many: "results" },
             );
             if (!options.expanded || failed || !output) return new Text(summary, 0, 0);
-            return new Text(`${summary}\n${preview(output, true)}`, 0, 0);
+            return new Text(`${summary}\n${preview(output, true, limitsFrom(settings))}`, 0, 0);
           },
         };
       case "ls":
@@ -215,7 +249,7 @@ export default function pretty(pi: ExtensionAPI) {
             const failed = isFailed(result);
             const summary = matchSummary(theme, output, failed, { one: "entry", many: "entries" });
             if (!options.expanded || failed) return new Text(summary, 0, 0);
-            return new Text(`${summary}\n${preview(output, true)}`, 0, 0);
+            return new Text(`${summary}\n${preview(output, true, limitsFrom(settings))}`, 0, 0);
           },
         };
     }
@@ -241,8 +275,12 @@ export default function pretty(pi: ExtensionAPI) {
 
   pi.on("session_start", async (_event, ctx) => {
     originals = buildOriginals(ctx.cwd);
+    loadSettings(ctx.cwd);
     config = replayBranch(ctx.sessionManager.getBranch() as never);
     applyAll();
+    if (settingsWarnings.length > 0 && ctx.hasUI) {
+      ctx.ui.notify(`pretty settings: ${settingsWarnings.join("; ")}`, "warning");
+    }
   });
 
   pi.on("session_tree", async (_event, ctx) => {

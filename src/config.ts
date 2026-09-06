@@ -33,7 +33,10 @@ export function toggleTool(config: PrettyConfig, tool: PrettyTool): PrettyConfig
     : { disabled: [...config.disabled, tool] };
 }
 
-export const PRETTY_USAGE = "Usage: /pretty [status | on|off [tool…] | reset | <tool…>]  tools: read, bash, edit, write, grep, find, ls";
+export const PRETTY_USAGE = [
+  "Usage: /pretty [status | on|off [tool…] | reset | <tool…>]  tools: read, bash, edit, write, grep, find, ls",
+  "Settings: .pi/pretty.json (project) or <agentDir>/pretty.json",
+].join("\n");
 
 /** Aliases the model or a hurried user is likely to type. */
 const ALIASES: Record<string, PrettyTool> = {

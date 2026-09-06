@@ -34,6 +34,22 @@ Aliases are accepted where they're obvious: `list`/`dir` → `ls`, `search`/`rg`
 
 Expanded bodies are capped at 200 lines (v0.2) — a 5,000-line diff or grep result used to render in full and scroll the conversation away.
 
+## Settings (v0.3)
+
+Every cap in a renderer is somebody's taste, and the right number depends on your terminal. Put them in `.pi/pretty.json` (project) or `<agentDir>/pretty.json` (global — the project file wins):
+
+```json
+{
+  "collapsedLines": 12,
+  "expandedLines": 200,
+  "diffLines": 200,
+  "syntaxHighlight": true,
+  "summaryClip": 100
+}
+```
+
+Unknown keys, wrong types, and absurd numbers are reported at session start and fall back to the shipped defaults rather than taking the renderers down — a typo tells you it was a typo instead of quietly doing nothing. `/pretty` shows the settings in force and where they came from. (The case for making these configurable is [`pi-cc-extensions`](https://github.com/minuque/pi-cc-extensions)' `/ccstyle`, which does it with a whole settings panel.)
+
 ## How it works
 
 The official `built-in-tool-renderer` pattern: each tool is re-registered with `createReadTool()`/`createBashTool()`/… delegating `execute` untouched, overriding only `renderCall`/`renderResult`. Highlighting uses pi's exported `highlightCode` + `getLanguageFromPath` — zero extra dependencies, colors always match your theme.

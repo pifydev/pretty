@@ -12,6 +12,11 @@ export interface PreviewLimits {
 
 export const DEFAULT_LIMITS: PreviewLimits = { collapsed: 12, expanded: 200 };
 
+/** Limits from user settings (v0.3); the caps themselves are unchanged. */
+export function limitsFrom(settings: { collapsedLines: number; expandedLines: number }): PreviewLimits {
+  return { collapsed: settings.collapsedLines, expanded: settings.expandedLines };
+}
+
 export function preview(text: string, expanded: boolean, limits: PreviewLimits = DEFAULT_LIMITS): string {
   const max = expanded ? limits.expanded : limits.collapsed;
   const lines = text.split("\n");

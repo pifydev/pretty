@@ -12,7 +12,8 @@ import {
   writeCall,
 } from "../src/summary.ts";
 import { colorizeDiff, diffStats, statsLabel } from "../src/diff.ts";
-import { DEFAULT_LIMITS, preview } from "../src/preview.ts";
+import { DEFAULT_LIMITS, limitsFrom, preview } from "../src/preview.ts";
+import { DEFAULT_SETTINGS, formatSettings, resolveSettings } from "../src/settings.ts";
 import { applyCommand, parsePrettyCommand } from "../src/config.ts";
 import { PRETTY_TOOLS, type PrettyTool } from "../src/types.ts";
 import { PRETTY_CONFIG, replayBranch, statusLines, toggleTool } from "../src/config.ts";
@@ -177,4 +178,52 @@ test("re-registration preserves every field of the original tool", async () => {
     // execute must be the very same function, not a wrapper
     assert.equal(reregistered.execute, original.execute, `${name}: execute was replaced`);
   }
+});
+
+test("v0.3 settings merge over the defaults and clamp the rest", () => {
+  const clean = resolveSettings({ collapsedLines: 5, expandedLines: 500, syntaxHighlight: false });
+  assert.equal(clean.settings.collapsedLines, 5);
+  assert.equal(clean.settings.expandedLines, 500);
+  assert.equal(clean.settings.syntaxHighlight, false);
+  // untouched keys keep their default
+  assert.equal(clean.settings.diffLines, DEFAULT_SETTINGS.diffLines);
+  assert.deepEqual(clean.warnings, []);
+
+  // a value nobody can have meant is clamped, and said out loud
+  const clamped = resolveSettings({ collapsedLines: 100000, summaryClip: 1 });
+  assert.equal(clamped.settings.collapsedLines, 200);
+  assert.equal(clamped.settings.summaryClip, 20);
+  assert.equal(clamped.warnings.length, 2);
+  assert.ok(clamped.warnings[0]!.includes("clamped"));
+});
+
+test("v0.3 a broken settings file degrades to defaults with a reason", () => {
+  const wrongType = resolveSettings({ collapsedLines: "twelve", syntaxHighlight: "yes" });
+  assert.deepEqual(wrongType.settings, DEFAULT_SETTINGS);
+  assert.equal(wrongType.warnings.length, 2);
+  assert.ok(wrongType.warnings.some((w) => w.includes("must be a number")));
+  assert.ok(wrongType.warnings.some((w) => w.includes("must be true or false")));
+
+  // typos are reported, not silently ignored
+  const typo = resolveSettings({ collapsedLimes: 5 });
+  assert.deepEqual(typo.settings, DEFAULT_SETTINGS);
+  assert.ok(typo.warnings[0]!.includes('unknown setting "collapsedLimes"'));
+
+  for (const junk of [null, undefined, [], "text", 42]) {
+    assert.deepEqual(resolveSettings(junk).settings, DEFAULT_SETTINGS, String(junk));
+  }
+});
+
+test("v0.3 settings drive the preview caps", () => {
+  const long = Array.from({ length: 40 }, (_, i) => `line ${i}`).join("\n");
+  const { settings } = resolveSettings({ collapsedLines: 3, expandedLines: 10 });
+  assert.equal(preview(long, false, limitsFrom(settings)).split("\n").length, 4);
+  assert.equal(preview(long, true, limitsFrom(settings)).split("\n").length, 11);
+});
+
+test("v0.3 formatSettings names its source", () => {
+  assert.match(formatSettings(DEFAULT_SETTINGS, null), /defaults — no pretty\.json/);
+  const text = formatSettings(DEFAULT_SETTINGS, "/repo/.pi/pretty.json");
+  assert.match(text, /Settings from \/repo\/\.pi\/pretty\.json/);
+  assert.match(text, /collapsedLines\s+12/);
 });

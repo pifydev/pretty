@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  clip,
   bashCall,
   bashSummary,
   editCall,
@@ -226,4 +227,26 @@ test("v0.3 formatSettings names its source", () => {
   const text = formatSettings(DEFAULT_SETTINGS, "/repo/.pi/pretty.json");
   assert.match(text, /Settings from \/repo\/\.pi\/pretty\.json/);
   assert.match(text, /collapsedLines\s+12/);
+});
+
+test("v0.3.1 every declared setting actually does something", () => {
+  // clip shortens in the middle: the tool and the filename both survive
+  const long = `src/${"nested/".repeat(20)}component.tsx`;
+  const clipped = clip(long, 40);
+  assert.equal(clipped.length, 40);
+  assert.ok(clipped.startsWith("src/nested"));
+  assert.ok(clipped.endsWith("component.tsx"));
+  assert.ok(clipped.includes("…"));
+  assert.equal(clip("short.ts", 40), "short.ts");
+  assert.equal(clip("abc", 0), "abc", "a zero cap disables clipping rather than erasing the line");
+
+  // and the summaries take the cap
+  const theme = { fg: (_c: string, t: string) => t, bold: (t: string) => t };
+  assert.ok(readCall(theme, { path: long }, 40).includes("…"));
+  assert.ok(!readCall(theme, { path: long }, 500).includes("…"));
+  assert.ok(editCall(theme, { path: long }, 40).includes("…"));
+  assert.ok(writeCall(theme, { path: long, content: "x" }, 40).includes("…"));
+  assert.ok(listCall(theme, { path: long }, 40).includes("…"));
+  assert.ok(searchCall(theme, "Grep", { pattern: "p".repeat(80) }, 40).includes("…"));
+  assert.ok(bashCall(theme, "echo " + "y".repeat(200), false, 40).includes("…"));
 });

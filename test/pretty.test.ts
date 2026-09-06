@@ -143,3 +143,38 @@ test("v0.2 /pretty routes: aliases, multi-tool, on/off, reset", () => {
   assert.equal(off.config.disabled.length, PRETTY_TOOLS.length);
   assert.deepEqual(applyCommand(off.config, parsePrettyCommand("reset")).config.disabled, []);
 });
+
+test("re-registration preserves every field of the original tool", async () => {
+  // The package's whole premise is that execution is untouched: it spreads
+  // pi's own tool definition and overrides only the renderers. pi keeps
+  // adding fields to that definition (0.85 added constrainedSampling), so
+  // this asserts the spread carries whatever pi ships, including fields that
+  // did not exist when this was written.
+  const pi = await import("@earendil-works/pi-coding-agent");
+  const factories = {
+    read: pi.createReadTool,
+    bash: pi.createBashTool,
+    edit: pi.createEditTool,
+    write: pi.createWriteTool,
+    grep: pi.createGrepTool,
+    find: pi.createFindTool,
+    ls: pi.createLsTool,
+  } as unknown as Record<string, (cwd: string) => Record<string, unknown>>;
+
+  for (const [name, create] of Object.entries(factories)) {
+    const original = create(process.cwd());
+    const reregistered = {
+      ...original,
+      renderCall: () => null,
+      renderResult: () => null,
+    } as Record<string, unknown>;
+
+    for (const key of Object.keys(original)) {
+      assert.ok(key in reregistered, `${name}: ${key} lost in re-registration`);
+      if (key === "renderCall" || key === "renderResult") continue;
+      assert.equal(reregistered[key], original[key], `${name}: ${key} changed`);
+    }
+    // execute must be the very same function, not a wrapper
+    assert.equal(reregistered.execute, original.execute, `${name}: execute was replaced`);
+  }
+});

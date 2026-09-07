@@ -1,6 +1,6 @@
 {
   "name": "@pify/pretty",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "description": "Compact, theme-aware rendering for pi's built-in tools: one-line summaries, syntax-highlighted reads, colorized diffs — behavior untouched",
   "keywords": [
     "pi-package",

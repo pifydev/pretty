@@ -16,12 +16,29 @@ Nothing here changes what a tool does. If this extension is removed, every comma
 |---|---|---|
 | `read` | `Read src/app.ts · lines 1–50` → `50 lines` | Syntax-highlighted content, theme-matched |
 | `bash` | `Bash npm test` → `✓ 12 output lines` / `✗ first error line` | Output, with a 12-line preview while it runs |
-| `edit` | `Edit src/app.ts` → `+12 -3` | Colourised diff |
+| `edit` | `Edit src/app.ts` → `+12 -3` | Colourised diff with word-level emphasis |
 | `write` | `Write y.md · 34 lines` → `✓ written` | — |
 | `grep` / `find` | `Grep TODO in src` → `7 matches` | The match list |
 | `ls` | `List packages` → `23 entries` | The listing |
 
 Expand with pi's standard toggle (Ctrl+O on a tool block). Failures always show the first error line in the error colour, collapsed or not — a failure you have to expand to notice is a failure you will miss.
+
+## Seeing what actually changed
+
+Line colour tells you *that* a line changed. When the change is one argument in a forty-column call, finding it is still your job — you read both lines and spot the difference yourself, which is the work the diff was supposed to have done.
+
+So a removed line and the added line that replaced it are compared word by word, and the rendering shows the answer: what carried over goes quiet, and what actually changed keeps the diff colour.
+
+```
+- const total = sum(items, 0);      ← "0" in the removed colour, the rest muted
++ const total = sum(items, 1);      ← "1" in the added colour, the rest muted
+```
+
+The pairing is deliberately conservative. Only a removed run and an added run of the *same length* are lined up, because two lines replaced by one is a rewrite rather than two edits — pairing those would invent a correspondence that is not there. And a pair whose lines have too little in common is left alone entirely: when the whole line is the change, dimming a few incidental brackets would only mislead. Pure insertions and pure deletions have no counterpart and are coloured whole, as before.
+
+Colours come from the theme's own `toolDiffAdded` / `toolDiffRemoved` / `toolDiffContext`, so a theme that styles diffs deliberately gets what it asked for. A theme without them falls back rather than throwing — `Theme.fg` raises on a name it does not know, and a throw inside a renderer takes the row down with it.
+
+Very long lines are not word-diffed at all: the comparison is quadratic, and a minified bundle on one line is not something anyone reads a word diff of.
 
 ## Per-tool opt-out
 
@@ -55,6 +72,8 @@ Every cap in a renderer is somebody's taste, and the right number depends on you
 Unknown keys, wrong types and absurd numbers are reported at session start and fall back to the shipped defaults rather than taking the renderers down — a typo should tell you it was a typo instead of quietly doing nothing. `/pretty` shows the settings in force and where they came from.
 
 Expanded bodies are capped by `expandedLines`, because a 5,000-line diff or grep result rendered in full scrolls the conversation away — which is the problem this extension exists to solve.
+
+`summaryClip` is a ceiling, not a target: the effective clip is also bounded by the width of your terminal, re-read on every render. A one-line summary wider than the terminal wraps onto two, and a collapsed row that takes two lines is not collapsed. Resizing mid-session is handled for the same reason.
 
 ## How it works
 

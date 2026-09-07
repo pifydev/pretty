@@ -46,11 +46,13 @@ import {
   bashCall,
   bashSummary,
   editCall,
+  effectiveClip,
   listCall,
   matchSummary,
   readCall,
   readSummary,
   searchCall,
+  terminalColumns,
   writeCall,
 } from "../src/summary.ts";
 import {
@@ -74,6 +76,15 @@ export default function pretty(pi: ExtensionAPI) {
   let config: PrettyConfig = DEFAULT_CONFIG;
   let settings: PrettySettings = DEFAULT_SETTINGS;
   let settingsSource: string | null = null;
+
+  /**
+   * The clip a summary actually gets. Read per render rather than cached:
+   * terminals get resized mid-session, and a summary sized for the old width
+   * is exactly the wrapped two-line row this package exists to avoid.
+   */
+  function clipWidth(): number {
+    return effectiveClip(settings.summaryClip, terminalColumns());
+  }
   let settingsWarnings: string[] = [];
 
   /** Project settings win over global ones; neither is required. */
@@ -126,7 +137,7 @@ export default function pretty(pi: ExtensionAPI) {
       case "read":
         return {
           renderCall: (args: { path?: string; offset?: number; limit?: number }, theme: ThemeLike) =>
-            new Text(readCall(theme, args ?? {}, settings.summaryClip), 0, 0),
+            new Text(readCall(theme, args ?? {}, clipWidth()), 0, 0),
           renderResult: (
             result: unknown,
             options: { expanded?: boolean; isPartial?: boolean },
@@ -158,7 +169,7 @@ export default function pretty(pi: ExtensionAPI) {
       case "bash":
         return {
           renderCall: (args: { command?: string }, theme: ThemeLike, context: { expanded?: boolean }) =>
-            new Text(bashCall(theme, args?.command ?? "", context?.expanded === true, settings.summaryClip), 0, 0),
+            new Text(bashCall(theme, args?.command ?? "", context?.expanded === true, clipWidth()), 0, 0),
           renderResult: (
             result: unknown,
             options: { expanded?: boolean; isPartial?: boolean },
@@ -176,7 +187,7 @@ export default function pretty(pi: ExtensionAPI) {
         };
       case "edit":
         return {
-          renderCall: (args: { path?: string }, theme: ThemeLike) => new Text(editCall(theme, args ?? {}, settings.summaryClip), 0, 0),
+          renderCall: (args: { path?: string }, theme: ThemeLike) => new Text(editCall(theme, args ?? {}, clipWidth()), 0, 0),
           renderResult: (
             result: unknown,
             options: { expanded?: boolean; isPartial?: boolean },
@@ -198,7 +209,7 @@ export default function pretty(pi: ExtensionAPI) {
       case "write":
         return {
           renderCall: (args: { path?: string; content?: string }, theme: ThemeLike) =>
-            new Text(writeCall(theme, args ?? {}, settings.summaryClip), 0, 0),
+            new Text(writeCall(theme, args ?? {}, clipWidth()), 0, 0),
           renderResult: (
             result: unknown,
             options: { expanded?: boolean; isPartial?: boolean },
@@ -217,7 +228,7 @@ export default function pretty(pi: ExtensionAPI) {
           renderCall: (
             args: { pattern?: string; path?: string; glob?: string },
             theme: ThemeLike,
-          ) => new Text(searchCall(theme, tool === "grep" ? "Grep" : "Find", args ?? {}, settings.summaryClip), 0, 0),
+          ) => new Text(searchCall(theme, tool === "grep" ? "Grep" : "Find", args ?? {}, clipWidth()), 0, 0),
           renderResult: (
             result: unknown,
             options: { expanded?: boolean; isPartial?: boolean },
@@ -238,7 +249,7 @@ export default function pretty(pi: ExtensionAPI) {
         };
       case "ls":
         return {
-          renderCall: (args: { path?: string }, theme: ThemeLike) => new Text(listCall(theme, args ?? {}, settings.summaryClip), 0, 0),
+          renderCall: (args: { path?: string }, theme: ThemeLike) => new Text(listCall(theme, args ?? {}, clipWidth()), 0, 0),
           renderResult: (
             result: unknown,
             options: { expanded?: boolean; isPartial?: boolean },

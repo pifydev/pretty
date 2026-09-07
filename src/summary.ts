@@ -10,8 +10,29 @@ function title(theme: ThemeLike, name: string): string {
   return theme.fg("toolTitle", theme.bold(name)) + " ";
 }
 
-/** Default summary clip; overridable through settings (v0.3). */
+/** Default summary clip; overridable through settings. */
 export const DEFAULT_CLIP = 100;
+
+/**
+ * Room the summary line actually has, which is not the same as the number in
+ * the settings. A one-line summary that is wider than the terminal wraps to
+ * two, and the whole point of collapsing a tool call was that it took one.
+ * The reserve covers the tool name, the separators, and the indent pi puts in
+ * front of a tool block.
+ */
+const WIDTH_RESERVE = 24;
+const MIN_CLIP = 24;
+
+export function effectiveClip(configured: number, columns: number | undefined): number {
+  if (typeof columns !== "number" || !Number.isFinite(columns) || columns <= 0) return configured;
+  return Math.max(MIN_CLIP, Math.min(configured, columns - WIDTH_RESERVE));
+}
+
+/** The terminal's width, when there is a terminal to ask. */
+export function terminalColumns(): number | undefined {
+  const columns = process.stdout?.columns;
+  return typeof columns === "number" && Number.isFinite(columns) && columns > 0 ? columns : undefined;
+}
 
 /**
  * Keep a one-line summary one line. A deeply nested path or a long command

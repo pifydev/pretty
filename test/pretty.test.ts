@@ -13,6 +13,7 @@ import {
   writeCall,
 } from "../src/summary.ts";
 import { colorizeDiff, diffStats, statsLabel } from "../src/diff.ts";
+import { effectiveClip } from "../src/summary.ts";
 import { DEFAULT_LIMITS, limitsFrom, preview } from "../src/preview.ts";
 import { DEFAULT_SETTINGS, formatSettings, resolveSettings } from "../src/settings.ts";
 import { applyCommand, parsePrettyCommand } from "../src/config.ts";
@@ -249,4 +250,104 @@ test("v0.3.1 every declared setting actually does something", () => {
   assert.ok(listCall(theme, { path: long }, 40).includes("…"));
   assert.ok(searchCall(theme, "Grep", { pattern: "p".repeat(80) }, 40).includes("…"));
   assert.ok(bashCall(theme, "echo " + "y".repeat(200), false, 40).includes("…"));
+});
+
+// ── Word-level emphasis ──────────────────────────────────────────────
+
+/** Stands in for a theme that carries pi's diff colours. */
+const marks: ThemeLike = {
+  fg: (color, text) => `[${color}]${text}[/]`,
+  bold: (text) => text,
+};
+
+/** Stands in for one that does not, so the fallback path is exercised. */
+const oldTheme: ThemeLike = {
+  fg: (color, text) => {
+    if (color.startsWith("toolDiff")) throw new Error(`Unknown theme color: ${color}`);
+    return `[${color}]${text}[/]`;
+  },
+  bold: (text) => text,
+};
+
+test("a paired change dims what carried over and keeps what changed", () => {
+  const diff = ["@@ -1,1 +1,1 @@", "-const total = sum(items, 0);", "+const total = sum(items, 1);"].join("\n");
+  const out = colorizeDiff(marks, diff);
+  // The old value stays in the removed colour, the new one in the added
+  // colour, and the identical surroundings go quiet on both lines.
+  assert.ok(out.includes("[toolDiffRemoved]0[/]"), out);
+  assert.ok(out.includes("[toolDiffAdded]1[/]"), out);
+  assert.ok(out.includes("[toolDiffContext]const total = sum(items, [/]"), out);
+});
+
+test("unrelated lines are coloured whole, as before", () => {
+  const diff = ["@@ -1,1 +1,1 @@", "-import { readFileSync } from 'node:fs';", "+export const MAX = 12;"].join("\n");
+  const out = colorizeDiff(marks, diff);
+  assert.ok(out.includes("[toolDiffRemoved]-import { readFileSync } from 'node:fs';[/]"), out);
+  assert.ok(out.includes("[toolDiffAdded]+export const MAX = 12;[/]"), out);
+  assert.ok(!out.includes("[toolDiffContext]import"), "nothing is context when nothing carried over");
+});
+
+test("a pure insertion has no counterpart to compare against", () => {
+  const diff = ["@@ -1,1 +1,2 @@", " keep", "+brand new line"].join("\n");
+  const out = colorizeDiff(marks, diff);
+  assert.ok(out.includes("[toolDiffAdded]+brand new line[/]"), out);
+  assert.ok(!out.includes("[toolDiffContext]"), out);
+});
+
+test("an uneven run is not paired up line by line", () => {
+  // Two lines removed and one added is a rewrite, not two in-place edits;
+  // pairing them would invent a correspondence that is not there.
+  const diff = ["@@ -1,2 +1,1 @@", "-alpha one", "-alpha two", "+alpha one two"].join("\n");
+  const out = colorizeDiff(marks, diff);
+  assert.ok(out.includes("[toolDiffRemoved]-alpha one[/]"), out);
+  assert.ok(out.includes("[toolDiffRemoved]-alpha two[/]"), out);
+  assert.ok(out.includes("[toolDiffAdded]+alpha one two[/]"), out);
+});
+
+test("file headers outside a hunk are never treated as removals", () => {
+  const diff = ["--- a/x.ts", "+++ b/x.ts", "@@ -1,1 +1,1 @@", "-a = 1", "+a = 2"].join("\n");
+  const out = colorizeDiff(marks, diff);
+  assert.ok(out.includes("[dim]--- a/x.ts[/]"), out);
+  assert.ok(out.includes("[dim]+++ b/x.ts[/]"), out);
+});
+
+test("emphasis can be turned off and the old rendering comes back", () => {
+  const diff = ["@@ -1,1 +1,1 @@", "-a = 1", "+a = 2"].join("\n");
+  const out = colorizeDiff(marks, diff, false);
+  assert.ok(out.includes("[toolDiffRemoved]-a = 1[/]"), out);
+  assert.ok(out.includes("[toolDiffAdded]+a = 2[/]"), out);
+  assert.ok(!out.includes("[toolDiffContext]a = [/]"), out);
+});
+
+test("every character of the original line survives the emphasis pass", () => {
+  const diff = ["@@ -1,1 +1,1 @@", "-  const x = f(a, b);", "+  const x = f(a, c);"].join("\n");
+  const out = colorizeDiff(marks, diff);
+  const stripped = out.replaceAll(/\[[a-zA-Z]+\]|\[\/\]/g, "");
+  assert.equal(stripped, diff, "rendering must not lose or reorder anything");
+});
+
+test("a summary is clipped to the terminal, not just to the setting", () => {
+  // A one-line summary wider than the terminal wraps to two, which is the
+  // whole thing collapsing was supposed to prevent.
+  assert.equal(effectiveClip(100, 200), 100, "a wide terminal leaves the setting alone");
+  assert.equal(effectiveClip(100, 80), 56, "a narrow one takes precedence");
+  assert.equal(effectiveClip(40, 200), 40, "the setting is still a ceiling");
+  // Absurdly narrow terminals still get something to read.
+  assert.equal(effectiveClip(100, 10), 24);
+  // No terminal to ask (piped output, tests) means the setting stands.
+  assert.equal(effectiveClip(100, undefined), 100);
+  assert.equal(effectiveClip(100, 0), 100);
+  assert.equal(effectiveClip(100, Number.NaN), 100);
+});
+
+test("a theme without the diff colours falls back instead of throwing", () => {
+  // Theme.fg throws on a name it does not know, and a throw inside a renderer
+  // takes the whole row down.
+  const diff = ["@@ -1,1 +1,1 @@", "-a = 1", "+a = 2"].join("\n");
+  const out = colorizeDiff(oldTheme, diff);
+  assert.ok(out.includes("[error]"), out);
+  assert.ok(out.includes("[success]"), out);
+  assert.ok(out.includes("[dim]a = [/]"), out);
+  const stripped = out.replaceAll(/\[[a-zA-Z]+\]|\[\/\]/g, "");
+  assert.equal(stripped, diff);
 });

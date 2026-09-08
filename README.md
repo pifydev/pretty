@@ -75,6 +75,28 @@ Expanded bodies are capped by `expandedLines`, because a 5,000-line diff or grep
 
 `summaryClip` is a ceiling, not a target: the effective clip is also bounded by the width of your terminal, re-read on every render. A one-line summary wider than the terminal wraps onto two, and a collapsed row that takes two lines is not collapsed. Resizing mid-session is handled for the same reason.
 
+## Themes
+
+The renderers read the active pi theme and never their own colours, which is what keeps them consistent with the rest of your terminal — but it also means the word-level diff is only as legible as the theme's diff colours, and pi's builtin themes don't really have any. Measured: in both builtin themes `toolDiffAdded` **is** `success` and `toolDiffRemoved` **is** `error`, with context left as a flat grey. The emphasis works, but it is drawing on a palette that was never designed for it.
+
+So this package ships two themes with a diff palette of their own, derived from the [Token](https://github.com/ThorstenRhau/token) colourscheme's Ultra appearance:
+
+```
+pi --theme token-ultra-dark
+pi --theme token-ultra-light
+```
+
+Added and removed take Token's git-sign colours — the most separated pair in its palette — while context takes a muted foreground that is distinct from `dim`. Changed words and carried-over words are then genuinely different colours rather than two greys:
+
+| | added | removed | context |
+|---|---|---|---|
+| `token-ultra-dark` | `#7da47a` | `#c67777` | `#8d8983` |
+| `token-ultra-light` | `#24831f` | `#c82a2a` | `#544e44` |
+
+The rest follows Token's own semantics — copper for definitions, ochre for control flow, teal for literals — so syntax-highlighted reads match the scheme you may already be running in Neovim, Ghostty, delta and the rest.
+
+Themes only apply in the TUI: `--theme` is ignored under `-p`, for pi's builtin themes as much as for these. `test/live/theme-wire.mjs` therefore drives pi's own theme loader instead of a session, and checks that every colour resolves, that the `vars` indirection really happened, and that the three diff colours are three different colours.
+
 ## How it works
 
 Each tool is re-registered through pi's own `createReadTool()` / `createBashTool()` / … factories with `execute` delegated untouched, overriding only `renderCall` and `renderResult`. Highlighting uses pi's exported `highlightCode` and `getLanguageFromPath`, so colours always match your theme and there are no extra dependencies.

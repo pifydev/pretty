@@ -1,7 +1,7 @@
 {
   "name": "@pify/pretty",
   "version": "0.4.0",
-  "description": "Compact, theme-aware rendering for pi's built-in tools: one-line summaries, syntax-highlighted reads, colorized diffs — behavior untouched",
+  "description": "Compact, theme-aware rendering for pi's built-in tools: one-line summaries, syntax-highlighted reads, colorized diffs \u2014 behavior untouched",
   "keywords": [
     "pi-package",
     "pi-extension",
@@ -27,12 +27,16 @@
   "files": [
     "extensions",
     "src",
+    "themes",
     "README.md",
     "LICENSE"
   ],
   "pi": {
     "extensions": [
       "./extensions/pretty.ts"
+    ],
+    "themes": [
+      "./themes"
     ]
   },
   "scripts": {

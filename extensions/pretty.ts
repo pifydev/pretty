@@ -14,13 +14,13 @@
  * (giladbarnea/pi-pretty-bash), per-surface opt-in (pi-zentui).
  */
 import {
-  createBashTool,
-  createEditTool,
-  createFindTool,
-  createGrepTool,
-  createLsTool,
-  createReadTool,
-  createWriteTool,
+  createBashToolDefinition,
+  createEditToolDefinition,
+  createFindToolDefinition,
+  createGrepToolDefinition,
+  createLsToolDefinition,
+  createReadToolDefinition,
+  createWriteToolDefinition,
   getAgentDir,
   getLanguageFromPath,
   highlightCode,
@@ -120,14 +120,23 @@ export default function pretty(pi: ExtensionAPI) {
   }
 
   function buildOriginals(cwd: string): Record<PrettyTool, AnyTool> {
+    // The *ToolDefinition* factories, not the createReadTool wrappers: the
+    // wrapper (wrapToolDefinition) copies only name/label/description/
+    // parameters/execute and DROPS promptSnippet, promptGuidelines and the
+    // built-in renderers. Re-registering the wrapped form removed six of the
+    // seven builtins from the system prompt's "Available tools" list —
+    // measured: with pretty loaded the list shrank to bash alone, and the
+    // Guidelines steered the model to bash for file operations because read,
+    // edit and write were no longer named. A renderer package must never
+    // change what the model is told it can do.
     return {
-      read: createReadTool(cwd) as unknown as AnyTool,
-      bash: createBashTool(cwd) as unknown as AnyTool,
-      edit: createEditTool(cwd) as unknown as AnyTool,
-      write: createWriteTool(cwd) as unknown as AnyTool,
-      grep: createGrepTool(cwd) as unknown as AnyTool,
-      find: createFindTool(cwd) as unknown as AnyTool,
-      ls: createLsTool(cwd) as unknown as AnyTool,
+      read: createReadToolDefinition(cwd) as unknown as AnyTool,
+      bash: createBashToolDefinition(cwd) as unknown as AnyTool,
+      edit: createEditToolDefinition(cwd) as unknown as AnyTool,
+      write: createWriteToolDefinition(cwd) as unknown as AnyTool,
+      grep: createGrepToolDefinition(cwd) as unknown as AnyTool,
+      find: createFindToolDefinition(cwd) as unknown as AnyTool,
+      ls: createLsToolDefinition(cwd) as unknown as AnyTool,
     };
   }
 

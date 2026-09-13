@@ -7,7 +7,21 @@
 export interface ThemeLike {
   fg(color: string, text: string): string;
   bold(text: string): string;
+  /**
+   * Background paint, `theme.bg(key, text)`. Optional so src/ typechecks
+   * standalone and a test theme can omit it; the diff renderer guards its
+   * absence (and, like `fg`, a name the theme does not know). Used to give a
+   * changed line a subtle +/- background instead of a whole-line foreground
+   * tint, which is the only way a syntax-highlighted body can also read as a
+   * diff — foreground is already spent on the syntax.
+   */
+  bg?(color: string, text: string): string;
+  /** Reverse video, `theme.inverse(text)` — marks the exact changed words. */
+  inverse?(text: string): string;
 }
+
+/** Syntax-highlight one line of code to an ANSI string; empty deps in src/. */
+export type HighlightLine = (code: string, language: string) => string;
 
 /** The tools this extension can re-render. */
 export const PRETTY_TOOLS = ["read", "bash", "edit", "write", "grep", "find", "ls"] as const;

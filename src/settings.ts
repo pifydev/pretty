@@ -21,6 +21,12 @@ export interface PrettySettings {
   diffLines: number;
   /** Highlight expanded read results with pi's own highlighter. */
   syntaxHighlight: boolean;
+  /** Syntax-highlight the body of an edit diff, not just tint the lines. */
+  diffSyntax: boolean;
+  /** Prepend old/new line-number gutters to an expanded edit diff. */
+  diffLineNumbers: boolean;
+  /** Render the edit diff side-by-side (old | new) when the terminal is wide enough. */
+  diffSplit: boolean;
   /** Longest path/command shown in a one-line summary. */
   summaryClip: number;
 }
@@ -30,6 +36,9 @@ export const DEFAULT_SETTINGS: PrettySettings = {
   expandedLines: 200,
   diffLines: 200,
   syntaxHighlight: true,
+  diffSyntax: true,
+  diffLineNumbers: true,
+  diffSplit: false,
   summaryClip: 100,
 };
 
@@ -38,6 +47,9 @@ const LIMITS: Record<keyof PrettySettings, { min: number; max: number } | null> 
   expandedLines: { min: 5, max: 10_000 },
   diffLines: { min: 5, max: 10_000 },
   syntaxHighlight: null,
+  diffSyntax: null,
+  diffLineNumbers: null,
+  diffSplit: null,
   summaryClip: { min: 20, max: 500 },
 };
 

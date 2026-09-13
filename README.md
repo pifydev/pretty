@@ -16,7 +16,7 @@ Nothing here changes what a tool does. If this extension is removed, every comma
 |---|---|---|
 | `read` | `Read src/app.ts · lines 1–50` → `50 lines` | Syntax-highlighted content, theme-matched |
 | `bash` | `Bash npm test` → `✓ 12 output lines` / `✗ first error line` | Output, with a 12-line preview while it runs |
-| `edit` | `Edit src/app.ts` → `+12 -3` | Colourised diff with word-level emphasis |
+| `edit` | `Edit src/app.ts` → `+12 -3` | Syntax-highlighted diff with line numbers and word-level emphasis |
 | `write` | `Write y.md · 34 lines` → `✓ written` | — |
 | `grep` / `find` | `Grep TODO in src` → `7 matches` | The match list |
 | `ls` | `List packages` → `23 entries` | The listing |
@@ -39,6 +39,19 @@ The pairing is deliberately conservative. Only a removed run and an added run of
 Colours come from the theme's own `toolDiffAdded` / `toolDiffRemoved` / `toolDiffContext`, so a theme that styles diffs deliberately gets what it asked for. A theme without them falls back rather than throwing — `Theme.fg` raises on a name it does not know, and a throw inside a renderer takes the row down with it.
 
 Very long lines are not word-diffed at all: the comparison is quadratic, and a minified bundle on one line is not something anyone reads a word diff of.
+
+### Syntax, line numbers, and split
+
+The diff body is syntax-highlighted with pi's own highlighter — the same one the `read` renderer uses, so no extra dependency and the colours match your theme. Foreground is spent on the syntax, so the `+`/`−` signal moves to a subtle line background (the theme's `toolSuccessBg` / `toolErrorBg`; this package's themes map those to real diff tints), and the changed words are marked with reverse video *on top* of the syntax colour — the one combination where syntax, the add/remove signal, and word emphasis are all visible at once. A theme with no background support keeps the coloured `+`/`−` marker instead, so nothing is lost.
+
+Old/new line numbers run down the left. And with `diffSplit` on, a wide enough terminal shows the change side-by-side — old on the left, new on the right — falling back to the unified view below 100 columns. Turn either off in settings.
+
+```
+1 1   export function total(items) {
+2     - const sum = items.reduce((a, b) => a + b, 0);   ← "0" reversed on a faint red line
+  2   + const sum = items.reduce((a, b) => a + b, 1);   ← "1" reversed on a faint green line
+3 3     return sum;
+```
 
 ## Per-tool opt-out
 
@@ -65,9 +78,14 @@ Every cap in a renderer is somebody's taste, and the right number depends on you
   "expandedLines": 200,
   "diffLines": 200,
   "syntaxHighlight": true,
+  "diffSyntax": true,
+  "diffLineNumbers": true,
+  "diffSplit": false,
   "summaryClip": 100
 }
 ```
+
+`syntaxHighlight` highlights expanded `read` results; `diffSyntax` does the same for the body of an edit diff (turn it off to get the older foreground-only diff); `diffLineNumbers` toggles the old/new gutter; `diffSplit` renders the diff side-by-side when the terminal is at least 100 columns wide, unified otherwise.
 
 Unknown keys, wrong types and absurd numbers are reported at session start and fall back to the shipped defaults rather than taking the renderers down — a typo should tell you it was a typo instead of quietly doing nothing. `/pretty` shows the settings in force and where they came from.
 

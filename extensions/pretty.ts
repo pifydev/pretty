@@ -39,7 +39,8 @@ import {
   replayBranch,
   statusLines,
 } from "../src/config.ts";
-import { colorizeDiff, diffStats, statsLabel } from "../src/diff.ts";
+import { colorizeDiff, diffStats, statsLabel, type DiffRenderOptions } from "../src/diff.ts";
+import { buildSplit, splitFits } from "../src/split.ts";
 import { limitsFrom, preview } from "../src/preview.ts";
 import { DEFAULT_SETTINGS, formatSettings, resolveSettings, type PrettySettings } from "../src/settings.ts";
 import {
@@ -59,6 +60,7 @@ import {
   DEFAULT_CONFIG,
   isRecord,
   textContent,
+  type HighlightLine,
   type PrettyConfig,
   type PrettyTool,
   type ThemeLike,
@@ -140,6 +142,25 @@ export default function pretty(pi: ExtensionAPI) {
     };
   }
 
+  /**
+   * pi's own highlighter, one line at a time. `highlightCode` returns an array
+   * of ANSI lines; a diff feeds it one content line at a time, so join back to
+   * a single string. Best-effort — the diff renderer falls back to raw text if
+   * this throws on a grammar it cannot parse.
+   */
+  const highlightLine: HighlightLine = (code, language) => highlightCode(code, language).join("");
+
+  /** The diff-rendering options in force, given the current settings and file. */
+  function diffOptions(path: string | undefined): DiffRenderOptions {
+    const language = path ? getLanguageFromPath(path) : undefined;
+    return {
+      emphasis: true,
+      lineNumbers: settings.diffLineNumbers,
+      language: settings.diffSyntax ? language ?? undefined : undefined,
+      highlight: settings.diffSyntax ? highlightLine : undefined,
+    };
+  }
+
   /** Renderers per tool; delegate execution to the original untouched. */
   function renderersFor(tool: PrettyTool): Record<string, unknown> {
     switch (tool) {
@@ -201,6 +222,7 @@ export default function pretty(pi: ExtensionAPI) {
             result: unknown,
             options: { expanded?: boolean; isPartial?: boolean },
             theme: ThemeLike,
+            context?: { args?: { path?: string } },
           ) => {
             if (options.isPartial) return new Text(theme.fg("warning", "Editing…"), 0, 0);
             if (isFailed(result)) {
@@ -212,7 +234,13 @@ export default function pretty(pi: ExtensionAPI) {
                 : "";
             const stats = statsLabel(theme, diffStats(diff));
             if (!options.expanded) return new Text(stats, 0, 0);
-            return new Text(`${stats}\n${colorizeDiff(theme, preview(diff, true, { collapsed: settings.collapsedLines, expanded: settings.diffLines }))}`, 0, 0);
+            const body = preview(diff, true, { collapsed: settings.collapsedLines, expanded: settings.diffLines });
+            const opts = diffOptions(context?.args?.path);
+            const columns = terminalColumns();
+            if (settings.diffSplit && splitFits(columns)) {
+              return new Text(`${stats}\n${buildSplit(theme, body, opts, columns!)}`, 0, 0);
+            }
+            return new Text(`${stats}\n${colorizeDiff(theme, body, opts)}`, 0, 0);
           },
         };
       case "write":

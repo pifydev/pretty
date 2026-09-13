@@ -42,6 +42,7 @@ import {
 import { colorizeDiff, diffStats, statsLabel, type DiffRenderOptions } from "../src/diff.ts";
 import { buildSplit, splitFits } from "../src/split.ts";
 import { limitsFrom, preview } from "../src/preview.ts";
+import { sanitizeOutput, tidyPreview } from "../src/sanitize.ts";
 import { DEFAULT_SETTINGS, formatSettings, resolveSettings, type PrettySettings } from "../src/settings.ts";
 import {
   bashCall,
@@ -174,7 +175,9 @@ export default function pretty(pi: ExtensionAPI) {
             theme: ThemeLike,
           ) => {
             if (options.isPartial) return new Text(theme.fg("warning", "Reading…"), 0, 0);
-            const output = textContent(result);
+            // Strip any non-SGR escapes a file's bytes might carry so they
+            // cannot move the cursor when rendered; keep the content otherwise.
+            const output = sanitizeOutput(textContent(result));
             const failed = isFailed(result);
             const truncated =
               isRecord(result) && isRecord(result.details) && isRecord(result.details.truncation)
@@ -205,7 +208,10 @@ export default function pretty(pi: ExtensionAPI) {
             options: { expanded?: boolean; isPartial?: boolean },
             theme: ThemeLike,
           ) => {
-            const output = textContent(result);
+            // Build output and progress bars are full of cursor moves,
+            // erase-line and carriage returns; strip all but colour and tidy
+            // blank runs so they cannot scribble over the compact frame.
+            const output = tidyPreview(sanitizeOutput(textContent(result)));
             if (options.isPartial) {
               return new Text(`${theme.fg("warning", "Running…")}\n${preview(output, false, limitsFrom(settings))}`, 0, 0);
             }
@@ -272,7 +278,7 @@ export default function pretty(pi: ExtensionAPI) {
             theme: ThemeLike,
           ) => {
             if (options.isPartial) return new Text(theme.fg("warning", "Searching…"), 0, 0);
-            const output = textContent(result);
+            const output = tidyPreview(sanitizeOutput(textContent(result)));
             const failed = isFailed(result);
             const summary = matchSummary(
               theme,
@@ -293,7 +299,7 @@ export default function pretty(pi: ExtensionAPI) {
             theme: ThemeLike,
           ) => {
             if (options.isPartial) return new Text(theme.fg("warning", "Listing…"), 0, 0);
-            const output = textContent(result);
+            const output = tidyPreview(sanitizeOutput(textContent(result)));
             const failed = isFailed(result);
             const summary = matchSummary(theme, output, failed, { one: "entry", many: "entries" });
             if (!options.expanded || failed) return new Text(summary, 0, 0);

@@ -25,6 +25,8 @@ Nothing here changes what a tool does. If this extension is removed, every comma
 
 Expand with pi's standard toggle (Ctrl+O on a tool block). Failures always show the first error line in the error colour, collapsed or not — a failure you have to expand to notice is a failure you will miss.
 
+Output rendered into these compact rows is first stripped of everything but colour: a build tool's progress bar (cursor moves, erase-line, carriage returns) or a program that sets the window title would otherwise scribble over the row or the rest of the transcript. Only SGR colour survives, and runs of blank lines are collapsed — display only, the result the model sees is pi's own, untouched.
+
 ## Seeing what actually changed
 
 Line colour tells you *that* a line changed. When the change is one argument in a forty-column call, finding it is still your job — you read both lines and spot the difference yourself, which is the work the diff was supposed to have done.

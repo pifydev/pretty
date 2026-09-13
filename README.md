@@ -1,5 +1,7 @@
 # @pify/pretty
 
+[![npm version](https://img.shields.io/npm/v/@pify/pretty)](https://www.npmjs.com/package/@pify/pretty) [![npm downloads](https://img.shields.io/npm/dm/@pify/pretty)](https://www.npmjs.com/package/@pify/pretty)
+
 Compact, theme-aware rendering for [pi](https://github.com/earendil-works/pi)'s built-in tools — one-line summaries that expand on demand, syntax-highlighted reads, colourised diffs. **Behaviour is untouched**: every tool delegates to pi's original implementation, and only the rendering changes.
 
 Part of the [Pify suite](https://github.com/pifydev). Install with [`pify install pretty`](https://github.com/pifydev/cli) or `pi install npm:@pify/pretty`.

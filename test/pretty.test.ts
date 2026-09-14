@@ -365,3 +365,15 @@ test("a theme without the diff colours falls back instead of throwing", () => {
   const stripped = out.replaceAll(/\[[a-zA-Z]+\]|\[\/\]/g, "");
   assert.equal(stripped, diff);
 });
+
+test("the detail expand tier raises the expanded cap to detailLines", () => {
+  assert.equal(DEFAULT_SETTINGS.detailLines, 1000);
+  const normal = limitsFrom(DEFAULT_SETTINGS, false);
+  const detail = limitsFrom(DEFAULT_SETTINGS, true);
+  assert.equal(normal.expanded, DEFAULT_SETTINGS.expandedLines);
+  assert.equal(detail.expanded, DEFAULT_SETTINGS.detailLines);
+  assert.equal(detail.collapsed, DEFAULT_SETTINGS.collapsedLines, "collapsed cap is unchanged by the tier");
+  // detailLines is clamped like the other caps.
+  assert.equal(resolveSettings({ detailLines: 999999 }).settings.detailLines, 50000);
+  assert.equal(resolveSettings({ detailLines: 2 }).settings.detailLines, 5);
+});

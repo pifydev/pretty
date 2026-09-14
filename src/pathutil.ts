@@ -14,13 +14,11 @@
  * Zero dependencies, like the rest of the package.
  */
 
-/** Middle-clip a single string to `max`, matching summary.ts's clip shape. */
+import { clipToWidth } from "./width.ts";
+
+/** Middle-clip a single string to `max` columns (width-aware). */
 function clipMiddle(text: string, max: number): string {
-  if (max <= 0 || text.length <= max) return text;
-  if (max <= 4) return text.slice(0, max);
-  const head = Math.ceil((max - 1) / 2);
-  const tail = max - 1 - head;
-  return `${text.slice(0, head)}…${text.slice(text.length - tail)}`;
+  return clipToWidth(text, max);
 }
 
 /** The leading root/drive/UNC/home prefix and the rest, given the separator. */

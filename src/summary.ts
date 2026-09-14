@@ -1,4 +1,5 @@
 import { compactPath } from "./pathutil.ts";
+import { clipToWidth } from "./width.ts";
 import { countLines, type ThemeLike } from "./types.ts";
 
 /**
@@ -41,11 +42,9 @@ export function terminalColumns(): number | undefined {
  * file, and the part nobody reads is what goes.
  */
 export function clip(text: string, max: number = DEFAULT_CLIP): string {
-  if (max <= 0 || text.length <= max) return text;
-  if (max <= 4) return text.slice(0, max);
-  const head = Math.ceil((max - 1) / 2);
-  const tail = max - 1 - head;
-  return `${text.slice(0, head)}…${text.slice(text.length - tail)}`;
+  // Width-aware: `max` is terminal COLUMNS, not code units, so a summary with
+  // CJK/emoji stays within the line instead of wrapping.
+  return clipToWidth(text, max);
 }
 
 export function readCall(

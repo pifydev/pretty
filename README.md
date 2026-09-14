@@ -23,7 +23,7 @@ Nothing here changes what a tool does. If this extension is removed, every comma
 | `grep` / `find` | `Grep TODO in src` → `7 matches` | The match list |
 | `ls` | `List packages` → `23 entries` | The listing |
 
-Expand with pi's standard toggle (Ctrl+O on a tool block). Failures always show the first error line in the error colour, collapsed or not — a failure you have to expand to notice is a failure you will miss.
+Expand with pi's standard toggle (Ctrl+O on a tool block). **Ctrl+Shift+O** toggles a deeper "more detail" tier that raises the expanded line caps to `detailLines` (default 1000) — for the times a truncated 200-line view isn't enough. Failures always show the first error line in the error colour, collapsed or not — a failure you have to expand to notice is a failure you will miss.
 
 Output rendered into these compact rows is first stripped of everything but colour: a build tool's progress bar (cursor moves, erase-line, carriage returns) or a program that sets the window title would otherwise scribble over the row or the rest of the transcript. Only SGR colour survives, and runs of blank lines are collapsed — display only, the result the model sees is pi's own, untouched.
 
@@ -92,6 +92,7 @@ Every cap in a renderer is somebody's taste, and the right number depends on you
 {
   "collapsedLines": 12,
   "expandedLines": 200,
+  "detailLines": 1000,
   "diffLines": 200,
   "syntaxHighlight": true,
   "diffSyntax": true,
@@ -110,7 +111,9 @@ Every cap in a renderer is somebody's taste, and the right number depends on you
 
 Unknown keys, wrong types and absurd numbers are reported at session start and fall back to the shipped defaults rather than taking the renderers down — a typo should tell you it was a typo instead of quietly doing nothing. `/pretty` shows the settings in force and where they came from.
 
-Expanded bodies are capped by `expandedLines`, because a 5,000-line diff or grep result rendered in full scrolls the conversation away — which is the problem this extension exists to solve.
+Expanded bodies are capped by `expandedLines`, because a 5,000-line diff or grep result rendered in full scrolls the conversation away — which is the problem this extension exists to solve. `detailLines` is the higher cap the Ctrl+Shift+O tier switches to when you do want the long view.
+
+Clipping is by terminal **column**, not character count, so a summary full of CJK or emoji (each two columns wide) still stays on one line instead of wrapping.
 
 `summaryClip` is a ceiling, not a target: the effective clip is also bounded by the width of your terminal, re-read on every render. A one-line summary wider than the terminal wraps onto two, and a collapsed row that takes two lines is not collapsed. Resizing mid-session is handled for the same reason.
 

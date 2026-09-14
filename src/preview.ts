@@ -12,9 +12,16 @@ export interface PreviewLimits {
 
 export const DEFAULT_LIMITS: PreviewLimits = { collapsed: 12, expanded: 200 };
 
-/** Limits from user settings (v0.3); the caps themselves are unchanged. */
-export function limitsFrom(settings: { collapsedLines: number; expandedLines: number }): PreviewLimits {
-  return { collapsed: settings.collapsedLines, expanded: settings.expandedLines };
+/**
+ * Limits from user settings. With `detail` (the Ctrl+Shift+O tier) the expanded
+ * cap is raised to `detailLines` so a deep-dive shows far more before truncating.
+ */
+export function limitsFrom(
+  settings: { collapsedLines: number; expandedLines: number; detailLines?: number },
+  detail = false,
+): PreviewLimits {
+  const expanded = detail && typeof settings.detailLines === "number" ? settings.detailLines : settings.expandedLines;
+  return { collapsed: settings.collapsedLines, expanded };
 }
 
 export function preview(text: string, expanded: boolean, limits: PreviewLimits = DEFAULT_LIMITS): string {

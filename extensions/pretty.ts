@@ -87,6 +87,16 @@ export default function pretty(pi: ExtensionAPI) {
   let config: PrettyConfig = DEFAULT_CONFIG;
   let settings: PrettySettings = DEFAULT_SETTINGS;
   let settingsSource: string | null = null;
+  /** The deeper "more detail" expand tier (Ctrl+Shift+O), for this session. */
+  let detailMode = false;
+
+  /** Body/diff line caps, raised to detailLines while the detail tier is on. */
+  function bodyLimits() {
+    return limitsFrom(settings, detailMode);
+  }
+  function diffLimits() {
+    return { collapsed: settings.collapsedLines, expanded: detailMode ? settings.detailLines : settings.diffLines };
+  }
 
   /**
    * The clip a summary actually gets. Read per render rather than cached:
@@ -217,7 +227,7 @@ export default function pretty(pi: ExtensionAPI) {
   function renderPreviewDiff(theme: ThemeLike, diff: string, path: string | undefined): string {
     const stats = statsLabel(theme, diffStats(diff), settings.diffStatMeter);
     const head = `${theme.fg("dim", "will apply")}  ${stats}`;
-    const body = preview(diff, true, { collapsed: settings.collapsedLines, expanded: settings.diffLines });
+    const body = preview(diff, true, diffLimits());
     return `${head}\n${colorizeDiff(theme, body, diffOptions(path))}`;
   }
 
@@ -319,11 +329,11 @@ export default function pretty(pi: ExtensionAPI) {
             // blank runs so they cannot scribble over the compact frame.
             const output = tidyPreview(sanitizeOutput(textContent(result)));
             if (options.isPartial) {
-              return new Text(`${theme.fg("warning", "Running…")}\n${preview(output, false, limitsFrom(settings))}`, 0, 0);
+              return new Text(`${theme.fg("warning", "Running…")}\n${preview(output, false, bodyLimits())}`, 0, 0);
             }
             const failed = isFailed(result);
             const summary = bashSummary(theme, output, failed);
-            const body = output && (options.expanded || failed) ? `\n${preview(output, options.expanded === true, limitsFrom(settings))}` : "";
+            const body = output && (options.expanded || failed) ? `\n${preview(output, options.expanded === true, bodyLimits())}` : "";
             return new Text(summary + body, 0, 0);
           },
         };
@@ -350,7 +360,7 @@ export default function pretty(pi: ExtensionAPI) {
                 : "";
             const stats = statsLabel(theme, diffStats(diff), settings.diffStatMeter);
             if (!options.expanded) return new Text(stats, 0, 0);
-            const body = preview(diff, true, { collapsed: settings.collapsedLines, expanded: settings.diffLines });
+            const body = preview(diff, true, diffLimits());
             const opts = diffOptions(context?.args?.path);
             const columns = terminalColumns();
             if (settings.diffSplit && splitFits(columns)) {
@@ -390,7 +400,7 @@ export default function pretty(pi: ExtensionAPI) {
                   const verb = before.existed ? "written" : "created";
                   const headline = `${theme.fg("success", `✓ ${verb}`)}  ${stats}`;
                   if (!options.expanded) return new Text(headline, 0, 0);
-                  const body = preview(diff, true, { collapsed: settings.collapsedLines, expanded: settings.diffLines });
+                  const body = preview(diff, true, diffLimits());
                   return new Text(`${headline}\n${colorizeDiff(theme, body, diffOptions(args.path))}`, 0, 0);
                 }
               }
@@ -420,7 +430,7 @@ export default function pretty(pi: ExtensionAPI) {
               tool === "grep" ? { one: "match", many: "matches" } : { one: "result", many: "results" },
             );
             if (!options.expanded || failed || !output) return new Text(summary, 0, 0);
-            return new Text(`${summary}\n${preview(output, true, limitsFrom(settings))}`, 0, 0);
+            return new Text(`${summary}\n${preview(output, true, bodyLimits())}`, 0, 0);
           },
         };
       case "ls":
@@ -436,7 +446,7 @@ export default function pretty(pi: ExtensionAPI) {
             const failed = isFailed(result);
             const summary = matchSummary(theme, output, failed, { one: "entry", many: "entries" });
             if (!options.expanded || failed) return new Text(summary, 0, 0);
-            return new Text(`${summary}\n${preview(output, true, limitsFrom(settings))}`, 0, 0);
+            return new Text(`${summary}\n${preview(output, true, bodyLimits())}`, 0, 0);
           },
         };
     }
@@ -509,6 +519,30 @@ export default function pretty(pi: ExtensionAPI) {
         changed.length === 0
           ? "Nothing changed."
           : changed.map((t) => `pretty ${t}: ${config.disabled.includes(t) ? "off" : "on"}`).join("\n"),
+        "info",
+      );
+    },
+  });
+
+  // A second expand tier: Ctrl+O is pi's own expand; Ctrl+Shift+O toggles a
+  // deeper "more detail" view that raises the expanded line caps to detailLines.
+  // The toggle is a no-op state poke away from a repaint, so nudge pi to redraw
+  // the tool rows by re-asserting the current expand state. (Idea from
+  // FammasMaz/pi-cc-tools.)
+  pi.registerShortcut("ctrl+shift+o", {
+    description: "Pretty: toggle a deeper 'more detail' expand tier",
+    handler: (ctx: ExtensionContext) => {
+      detailMode = !detailMode;
+      if (!ctx.hasUI) return;
+      try {
+        ctx.ui.setToolsExpanded(ctx.ui.getToolsExpanded());
+      } catch {
+        // repaint poke is best-effort; the next render picks up the new tier anyway
+      }
+      ctx.ui.notify(
+        detailMode
+          ? `Pretty: more-detail view on (up to ${settings.detailLines} lines when expanded).`
+          : "Pretty: more-detail view off.",
         "info",
       );
     },

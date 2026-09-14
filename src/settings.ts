@@ -17,6 +17,8 @@ export interface PrettySettings {
   collapsedLines: number;
   /** Lines shown after expanding, before "+N more lines". */
   expandedLines: number;
+  /** Lines shown in the deeper "more detail" expand tier (Ctrl+Shift+O). */
+  detailLines: number;
   /** Lines of an edit diff shown after expanding. */
   diffLines: number;
   /** Highlight expanded read results with pi's own highlighter. */
@@ -40,6 +42,7 @@ export interface PrettySettings {
 export const DEFAULT_SETTINGS: PrettySettings = {
   collapsedLines: 12,
   expandedLines: 200,
+  detailLines: 1000,
   diffLines: 200,
   syntaxHighlight: true,
   diffSyntax: true,
@@ -54,6 +57,7 @@ export const DEFAULT_SETTINGS: PrettySettings = {
 const LIMITS: Record<keyof PrettySettings, { min: number; max: number } | null> = {
   collapsedLines: { min: 1, max: 200 },
   expandedLines: { min: 5, max: 10_000 },
+  detailLines: { min: 5, max: 50_000 },
   diffLines: { min: 5, max: 10_000 },
   syntaxHighlight: null,
   diffSyntax: null,

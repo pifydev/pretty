@@ -1,4 +1,5 @@
 import { overlayRanges, type Range } from "./ansi.ts";
+import { stabilizeBackgroundResets } from "./ansi-utils.ts";
 import { MIN_SIMILARITY, wordDiff, type Segment } from "./words.ts";
 import type { HighlightLine, ThemeLike } from "./types.ts";
 
@@ -28,8 +29,36 @@ export function diffStats(diff: string): DiffStats {
   return { added, removed };
 }
 
-export function statsLabel(theme: ThemeLike, stats: DiffStats): string {
-  return `${theme.fg("success", `+${stats.added}`)} ${theme.fg("error", `-${stats.removed}`)}`;
+export function statsLabel(theme: ThemeLike, stats: DiffStats, meter = false): string {
+  const label = `${theme.fg("success", `+${stats.added}`)} ${theme.fg("error", `-${stats.removed}`)}`;
+  if (!meter) return label;
+  const bar = statMeter(theme, stats);
+  return bar ? `${label} ${bar}` : label;
+}
+
+/**
+ * A proportional add/remove meter — a short run of blocks split green/red in
+ * the ratio of the change, so the shape of an edit (mostly additions? a big
+ * deletion?) reads at a glance next to the `+N -M` count. Every side that has
+ * any change gets at least one block, and the total never exceeds `slots`.
+ */
+export function statMeter(theme: ThemeLike, stats: DiffStats, slots = 5): string {
+  const total = stats.added + stats.removed;
+  if (total <= 0 || slots <= 0) return "";
+  let add = stats.added > 0 ? Math.max(1, Math.round((stats.added / total) * slots)) : 0;
+  let rem = stats.removed > 0 ? Math.max(1, Math.round((stats.removed / total) * slots)) : 0;
+  // Rounding both up can overshoot the slot budget; trim the larger side down.
+  while (add + rem > slots) {
+    if (add >= rem && add > 1) add--;
+    else if (rem > 1) rem--;
+    else break;
+  }
+  // Only paint a side that has blocks — an empty run would still emit a bare
+  // colour span.
+  const parts: string[] = [];
+  if (add > 0) parts.push(fg(theme, ADDED, "success", "━".repeat(add)));
+  if (rem > 0) parts.push(fg(theme, REMOVED, "error", "━".repeat(rem)));
+  return parts.join("");
 }
 
 /**
@@ -209,7 +238,12 @@ function syntaxLine(
     if (ranges.length > 0) body = overlayRanges(body, ranges, INV_ON, INV_OFF);
   }
   const line = fg(theme, color, fallback, marker) + body;
-  return bgKey ? withBg(theme, bgKey, line) : line;
+  if (!bgKey) return line;
+  // The highlighter closes each token with a full reset (ESC[0m), which would
+  // also clear the row background and leave the tint in ragged stripes. Rewrite
+  // those inner resets to spare the background before the theme paints it, so
+  // the +/- band spans the whole line.
+  return withBg(theme, bgKey, stabilizeBackgroundResets(line));
 }
 
 /**

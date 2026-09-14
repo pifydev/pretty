@@ -27,6 +27,8 @@ export interface PrettySettings {
   diffLineNumbers: boolean;
   /** Render the edit diff side-by-side (old | new) when the terminal is wide enough. */
   diffSplit: boolean;
+  /** Show a proportional add/remove meter bar next to the +N −M edit stats. */
+  diffStatMeter: boolean;
   /** Longest path/command shown in a one-line summary. */
   summaryClip: number;
 }
@@ -39,6 +41,7 @@ export const DEFAULT_SETTINGS: PrettySettings = {
   diffSyntax: true,
   diffLineNumbers: true,
   diffSplit: false,
+  diffStatMeter: true,
   summaryClip: 100,
 };
 
@@ -50,6 +53,7 @@ const LIMITS: Record<keyof PrettySettings, { min: number; max: number } | null> 
   diffSyntax: null,
   diffLineNumbers: null,
   diffSplit: null,
+  diffStatMeter: null,
   summaryClip: { min: 20, max: 500 },
 };
 

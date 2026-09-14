@@ -1,3 +1,4 @@
+import { compactPath } from "./pathutil.ts";
 import { countLines, type ThemeLike } from "./types.ts";
 
 /**
@@ -56,7 +57,7 @@ export function readCall(
     args.offset || args.limit
       ? theme.fg("dim", ` · lines ${args.offset ?? 1}${args.limit ? `–${(args.offset ?? 1) + args.limit - 1}` : "+"}`)
       : "";
-  return title(theme, "Read") + theme.fg("accent", clip(args.path ?? "", max)) + range;
+  return title(theme, "Read") + theme.fg("accent", compactPath(args.path ?? "", max)) + range;
 }
 
 export function readSummary(theme: ThemeLike, output: string, truncated: boolean, failed: boolean): string {
@@ -91,7 +92,7 @@ export function bashSummary(theme: ThemeLike, output: string, failed: boolean): 
 }
 
 export function editCall(theme: ThemeLike, args: { path?: string }, max: number = DEFAULT_CLIP): string {
-  return title(theme, "Edit") + theme.fg("accent", clip(args.path ?? "", max));
+  return title(theme, "Edit") + theme.fg("accent", compactPath(args.path ?? "", max));
 }
 
 export function writeCall(
@@ -102,7 +103,7 @@ export function writeCall(
   const lines = typeof args.content === "string" ? args.content.split("\n").length : 0;
   return (
     title(theme, "Write") +
-    theme.fg("accent", clip(args.path ?? "", max)) +
+    theme.fg("accent", compactPath(args.path ?? "", max)) +
     theme.fg("dim", ` · ${lines} ${lines === 1 ? "line" : "lines"}`)
   );
 }
@@ -114,12 +115,12 @@ export function searchCall(
   max: number = DEFAULT_CLIP,
 ): string {
   const pattern = clip(args.pattern ?? args.glob ?? "", max);
-  const where = args.path ? theme.fg("dim", ` in ${clip(args.path, max)}`) : "";
+  const where = args.path ? theme.fg("dim", ` in ${compactPath(args.path, max)}`) : "";
   return title(theme, name) + theme.fg("accent", pattern) + where;
 }
 
 export function listCall(theme: ThemeLike, args: { path?: string }, max: number = DEFAULT_CLIP): string {
-  return title(theme, "List") + theme.fg("accent", clip(args.path ?? ".", max));
+  return title(theme, "List") + theme.fg("accent", compactPath(args.path ?? ".", max));
 }
 
 export function matchSummary(

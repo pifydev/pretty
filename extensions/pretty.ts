@@ -238,7 +238,7 @@ export default function pretty(pi: ExtensionAPI) {
               isRecord(result) && isRecord(result.details) && typeof result.details.diff === "string"
                 ? result.details.diff
                 : "";
-            const stats = statsLabel(theme, diffStats(diff));
+            const stats = statsLabel(theme, diffStats(diff), settings.diffStatMeter);
             if (!options.expanded) return new Text(stats, 0, 0);
             const body = preview(diff, true, { collapsed: settings.collapsedLines, expanded: settings.diffLines });
             const opts = diffOptions(context?.args?.path);

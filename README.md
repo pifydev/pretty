@@ -18,7 +18,7 @@ Nothing here changes what a tool does. If this extension is removed, every comma
 |---|---|---|
 | `read` | `Read src/app.ts · lines 1–50` → `50 lines` | Syntax-highlighted content, theme-matched |
 | `bash` | `Bash npm test` → `✓ 12 output lines` / `✗ first error line` | Output, with a 12-line preview while it runs |
-| `edit` | `Edit src/app.ts` → `+12 -3` | Syntax-highlighted diff with line numbers and word-level emphasis |
+| `edit` | `Edit src/app.ts` → `+12 -3 ━━━━` | Syntax-highlighted diff with line numbers and word-level emphasis |
 | `write` | `Write y.md · 34 lines` → `✓ written` | — |
 | `grep` / `find` | `Grep TODO in src` → `7 matches` | The match list |
 | `ls` | `List packages` → `23 entries` | The listing |
@@ -49,6 +49,8 @@ Very long lines are not word-diffed at all: the comparison is quadratic, and a m
 The diff body is syntax-highlighted with pi's own highlighter — the same one the `read` renderer uses, so no extra dependency and the colours match your theme. Foreground is spent on the syntax, so the `+`/`−` signal moves to a subtle line background (the theme's `toolSuccessBg` / `toolErrorBg`; this package's themes map those to real diff tints), and the changed words are marked with reverse video *on top* of the syntax colour — the one combination where syntax, the add/remove signal, and word emphasis are all visible at once. A theme with no background support keeps the coloured `+`/`−` marker instead, so nothing is lost.
 
 Old/new line numbers run down the left. And with `diffSplit` on, a wide enough terminal shows the change side-by-side — old on the left, new on the right — falling back to the unified view below 100 columns. Turn either off in settings.
+
+The `+N −M` count carries a small proportional meter (`━━━━`, green/red in the ratio of the change) so the shape of an edit reads at a glance — mostly additions, a big deletion — with at least one block per non-changed side. Turn it off with `diffStatMeter`. Behind the scenes, the row background is now composited so the highlighter's own token resets can't punch holes in it: a full reset (`ESC[0m`) inside the highlighted body is rewritten to clear the foreground and styles but spare the background, so the +/- band spans the whole line instead of breaking into stripes. (Lesson from MasuRii/pi-tool-display.)
 
 ```
 1 1   export function total(items) {
@@ -85,11 +87,14 @@ Every cap in a renderer is somebody's taste, and the right number depends on you
   "diffSyntax": true,
   "diffLineNumbers": true,
   "diffSplit": false,
+  "diffStatMeter": true,
   "summaryClip": 100
 }
 ```
 
-`syntaxHighlight` highlights expanded `read` results; `diffSyntax` does the same for the body of an edit diff (turn it off to get the older foreground-only diff); `diffLineNumbers` toggles the old/new gutter; `diffSplit` renders the diff side-by-side when the terminal is at least 100 columns wide, unified otherwise.
+`syntaxHighlight` highlights expanded `read` results; `diffSyntax` does the same for the body of an edit diff (turn it off to get the older foreground-only diff); `diffLineNumbers` toggles the old/new gutter; `diffSplit` renders the diff side-by-side when the terminal is at least 100 columns wide, unified otherwise; `diffStatMeter` shows the proportional `━━━━` bar next to the `+N −M` count.
+
+`summaryClip` bounds file paths intelligently: instead of cutting anywhere, a long path drops whole middle directories and keeps the ends that identify it — the root or drive, the first directory, and the last directory plus the filename (`src/…/inspector/view.ts`, `C:\Users\…\deep\file.ts`). Commands and patterns still clip in the middle.
 
 Unknown keys, wrong types and absurd numbers are reported at session start and fall back to the shipped defaults rather than taking the renderers down — a typo should tell you it was a typo instead of quietly doing nothing. `/pretty` shows the settings in force and where they came from.
 

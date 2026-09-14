@@ -82,6 +82,8 @@ Each renderer toggles independently, and the choice is persisted per session:
 
 Aliases are accepted where they are obvious: `list`/`dir` → `ls`, `search`/`rg` → `grep`, `cat` → `read`, `sh`/`shell` → `bash`.
 
+**Running with [`@pify/shell-background`](https://github.com/pifydev/shell-background)?** Both packages register the `bash` tool, and pi has no way to compose two — whichever loads last wins. Turn pretty's bash renderer off with `/pretty off bash` and pretty steps aside entirely, leaving shell-background's async bash (with its `background: true` and 30-second auto-backgrounding) fully intact; every other renderer keeps working. (Turning bash off no longer re-registers a plain bash of its own, which previously clobbered shell-background — fixed in 0.9.1.)
+
 ## Settings
 
 Every cap in a renderer is somebody's taste, and the right number depends on your terminal. Put them in `.pi/pretty.json` (project) or `<agentDir>/pretty.json` (global — the project file wins):

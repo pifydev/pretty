@@ -445,8 +445,16 @@ export default function pretty(pi: ExtensionAPI) {
   /** (Re-)register one tool with or without pretty renderers. */
   function applyTool(tool: PrettyTool): void {
     if (!originals) return;
-    const original = originals[tool];
     const withPretty = !config.disabled.includes(tool);
+    // When bash is turned off, do NOT re-register it. Another package may own the
+    // bash tool — e.g. @pify/shell-background's async bash — and pi has no tool
+    // compose API, so re-registering even a pristine copy would clobber it,
+    // dropping that package's behaviour AND pretty's renderers (the worst of
+    // both). Leaving it unregistered lets whoever else registered bash keep it.
+    // The other built-ins are pretty's alone, so a disabled one is re-registered
+    // pristine to revert its rendering to pi's default within the session.
+    if (!withPretty && tool === "bash") return;
+    const original = originals[tool];
     pi.registerTool({
       ...original,
       ...(withPretty ? renderersFor(tool) : {}),

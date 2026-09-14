@@ -199,6 +199,20 @@ test("v0.3 settings merge over the defaults and clamp the rest", () => {
   assert.ok(clamped.warnings[0]!.includes("clamped"));
 });
 
+test("the diff-preview toggles are booleans that default on", () => {
+  assert.equal(DEFAULT_SETTINGS.prePreview, true);
+  assert.equal(DEFAULT_SETTINGS.writeDiff, true);
+  assert.equal(DEFAULT_SETTINGS.diffStatMeter, true);
+  const off = resolveSettings({ prePreview: false, writeDiff: false, diffStatMeter: false });
+  assert.equal(off.settings.prePreview, false);
+  assert.equal(off.settings.writeDiff, false);
+  assert.equal(off.settings.diffStatMeter, false);
+  assert.deepEqual(off.warnings, []);
+  const bad = resolveSettings({ prePreview: "sure" });
+  assert.equal(bad.settings.prePreview, true);
+  assert.ok(bad.warnings.some((w) => w.includes("must be true or false")));
+});
+
 test("v0.3 a broken settings file degrades to defaults with a reason", () => {
   const wrongType = resolveSettings({ collapsedLines: "twelve", syntaxHighlight: "yes" });
   assert.deepEqual(wrongType.settings, DEFAULT_SETTINGS);

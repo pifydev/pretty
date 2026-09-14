@@ -19,7 +19,7 @@ Nothing here changes what a tool does. If this extension is removed, every comma
 | `read` | `Read src/app.ts · lines 1–50` → `50 lines` | Syntax-highlighted content, theme-matched |
 | `bash` | `Bash npm test` → `✓ 12 output lines` / `✗ first error line` | Output, with a 12-line preview while it runs |
 | `edit` | `Edit src/app.ts` → `+12 -3 ━━━━` | Syntax-highlighted diff with line numbers and word-level emphasis |
-| `write` | `Write y.md · 34 lines` → `✓ written` | — |
+| `write` | `Write y.md · 34 lines` → `✓ created +34 -0 ━━━━` | The create/overwrite diff |
 | `grep` / `find` | `Grep TODO in src` → `7 matches` | The match list |
 | `ls` | `List packages` → `23 entries` | The listing |
 
@@ -59,6 +59,14 @@ The `+N −M` count carries a small proportional meter (`━━━━`, green/re
 3 3     return sum;
 ```
 
+## Seeing the change before it happens
+
+While an `edit` or `write` call is still pending — the arguments are in, the tool has not run yet — the projected diff is shown right there, so you read what *will* change before it does (idea from [MasuRii/pi-tool-display](https://github.com/MasuRii/pi-tool-display)). The edit is applied to the current file in memory and diffed; the write is diffed against the file it would overwrite (or shown whole for a new file). It only appears when the projection is unambiguous — an edit whose `oldText` matches exactly once, the same rule pi's edit itself enforces — so the preview can never disagree with what the tool does. Nothing is written; the file is only read.
+
+The read is sandboxed and bounded: the target must resolve, through symlinks, inside the working directory (a path pointing outside is skipped), and a file over 1 MB is not read. The result is cached per call so a pending row does not re-read the file every frame. Turn it off with `prePreview`.
+
+A finished `write` is then rendered as a diff too — `✓ created +34 -0` for a new file, `✓ written +12 -5` for an overwrite, expandable to the full change — instead of a bare `✓ written`, using the content captured before the write ran. Turn it off with `writeDiff`. Both fall back silently to the plain summary when the before-content could not be read.
+
 ## Per-tool opt-out
 
 Each renderer toggles independently, and the choice is persisted per session:
@@ -88,11 +96,13 @@ Every cap in a renderer is somebody's taste, and the right number depends on you
   "diffLineNumbers": true,
   "diffSplit": false,
   "diffStatMeter": true,
+  "prePreview": true,
+  "writeDiff": true,
   "summaryClip": 100
 }
 ```
 
-`syntaxHighlight` highlights expanded `read` results; `diffSyntax` does the same for the body of an edit diff (turn it off to get the older foreground-only diff); `diffLineNumbers` toggles the old/new gutter; `diffSplit` renders the diff side-by-side when the terminal is at least 100 columns wide, unified otherwise; `diffStatMeter` shows the proportional `━━━━` bar next to the `+N −M` count.
+`syntaxHighlight` highlights expanded `read` results; `diffSyntax` does the same for the body of an edit diff (turn it off to get the older foreground-only diff); `diffLineNumbers` toggles the old/new gutter; `diffSplit` renders the diff side-by-side when the terminal is at least 100 columns wide, unified otherwise; `diffStatMeter` shows the proportional `━━━━` bar next to the `+N −M` count; `prePreview` shows the projected diff while an edit/write is pending; `writeDiff` renders a finished write as a diff.
 
 `summaryClip` bounds file paths intelligently: instead of cutting anywhere, a long path drops whole middle directories and keeps the ends that identify it — the root or drive, the first directory, and the last directory plus the filename (`src/…/inspector/view.ts`, `C:\Users\…\deep\file.ts`). Commands and patterns still clip in the middle.
 

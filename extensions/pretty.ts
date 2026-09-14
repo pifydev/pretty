@@ -40,6 +40,14 @@ import {
   statusLines,
 } from "../src/config.ts";
 import { colorizeDiff, diffStats, statsLabel, type DiffRenderOptions } from "../src/diff.ts";
+import { unifiedDiff } from "../src/linediff.ts";
+import {
+  getEditReplacements,
+  previewBefore,
+  projectEdit,
+  projectWrite,
+  type BeforeContent,
+} from "../src/project-edit.ts";
 import { buildSplit, splitFits } from "../src/split.ts";
 import { limitsFrom, preview } from "../src/preview.ts";
 import { sanitizeOutput, tidyPreview } from "../src/sanitize.ts";
@@ -162,6 +170,104 @@ export default function pretty(pi: ExtensionAPI) {
     };
   }
 
+  // ── Pre-apply preview & write-as-diff ────────────────────────────────
+  //
+  // A pending edit/write shows the diff it WILL make before it runs, and a
+  // finished write is rendered as a create/overwrite diff. Both need the file's
+  // content from before the operation, read once (sandboxed, size-capped) and
+  // cached per tool call. State is keyed by the stable toolCallId rather than
+  // ctx.state so it survives from the call render to the result render without
+  // assuming ctx.state is a mutable object.
+
+  interface PreviewState {
+    /** File content before a write, captured while the call was pending. */
+    writeBefore?: BeforeContent | null;
+    /** Cache key (the args) for the memoized pre-apply preview string. */
+    key?: string;
+    /** Memoized pre-apply preview (null = nothing to show for these args). */
+    preview?: string | null;
+  }
+  const previewStates = new Map<string, PreviewState>();
+  const PREVIEW_STATE_CAP = 100;
+
+  interface RenderCtx {
+    args?: unknown;
+    cwd?: string;
+    toolCallId?: string;
+    argsComplete?: boolean;
+    executionStarted?: boolean;
+  }
+
+  function pstate(ctx: RenderCtx | undefined): PreviewState {
+    const id = ctx?.toolCallId;
+    if (typeof id !== "string") return {}; // no id → ephemeral, no caching
+    let st = previewStates.get(id);
+    if (!st) {
+      st = {};
+      previewStates.set(id, st);
+      if (previewStates.size > PREVIEW_STATE_CAP) {
+        const oldest = previewStates.keys().next().value;
+        if (oldest !== undefined) previewStates.delete(oldest);
+      }
+    }
+    return st;
+  }
+
+  /** Bound + colourise a projected diff for display under a pending call. */
+  function renderPreviewDiff(theme: ThemeLike, diff: string, path: string | undefined): string {
+    const stats = statsLabel(theme, diffStats(diff), settings.diffStatMeter);
+    const head = `${theme.fg("dim", "will apply")}  ${stats}`;
+    const body = preview(diff, true, { collapsed: settings.collapsedLines, expanded: settings.diffLines });
+    return `${head}\n${colorizeDiff(theme, body, diffOptions(path))}`;
+  }
+
+  /** The pre-apply diff for a pending edit, memoized by args; null when none. */
+  function editPreview(theme: ThemeLike, args: { path?: string }, ctx: RenderCtx | undefined): string | null {
+    if (!settings.prePreview || !ctx?.argsComplete || ctx.executionStarted || !ctx.cwd) return null;
+    const path = args?.path;
+    if (typeof path !== "string" || !path) return null;
+    const st = pstate(ctx);
+    const key = `e:${JSON.stringify(args ?? null)}`;
+    if (st.key === key) return st.preview ?? null;
+    let out: string | null = null;
+    const before = previewBefore(ctx.cwd, path);
+    if (before?.existed) {
+      const projected = projectEdit(before.content, getEditReplacements(args));
+      if (projected !== null) {
+        const diff = unifiedDiff(before.content, projected);
+        if (diff) out = renderPreviewDiff(theme, diff, path);
+      }
+    }
+    st.key = key;
+    st.preview = out;
+    return out;
+  }
+
+  /** Capture a write's before-content while the call is pending (once). */
+  function ensureWriteBefore(args: { path?: string }, ctx: RenderCtx | undefined): BeforeContent | null {
+    if (!ctx) return null;
+    const st = pstate(ctx);
+    if (st.writeBefore !== undefined) return st.writeBefore;
+    if (!ctx.argsComplete || ctx.executionStarted || !ctx.cwd) return null;
+    const path = args?.path;
+    if (typeof path !== "string" || !path) {
+      st.writeBefore = null;
+      return null;
+    }
+    st.writeBefore = previewBefore(ctx.cwd, path);
+    return st.writeBefore;
+  }
+
+  /** The pre-apply diff for a pending write; null when none. */
+  function writePreview(theme: ThemeLike, args: { path?: string; content?: string }, ctx: RenderCtx | undefined): string | null {
+    if (!settings.prePreview) return null;
+    const before = ensureWriteBefore(args, ctx);
+    if (!before) return null;
+    const after = typeof args?.content === "string" ? args.content : "";
+    const diff = unifiedDiff(before.content, after);
+    return diff ? renderPreviewDiff(theme, diff, args?.path) : null;
+  }
+
   /** Renderers per tool; delegate execution to the original untouched. */
   function renderersFor(tool: PrettyTool): Record<string, unknown> {
     switch (tool) {
@@ -223,7 +329,11 @@ export default function pretty(pi: ExtensionAPI) {
         };
       case "edit":
         return {
-          renderCall: (args: { path?: string }, theme: ThemeLike) => new Text(editCall(theme, args ?? {}, clipWidth()), 0, 0),
+          renderCall: (args: { path?: string }, theme: ThemeLike, context?: RenderCtx) => {
+            const summary = editCall(theme, args ?? {}, clipWidth());
+            const pv = editPreview(theme, args ?? {}, context);
+            return new Text(pv ? `${summary}\n${pv}` : summary, 0, 0);
+          },
           renderResult: (
             result: unknown,
             options: { expanded?: boolean; isPartial?: boolean },
@@ -251,16 +361,39 @@ export default function pretty(pi: ExtensionAPI) {
         };
       case "write":
         return {
-          renderCall: (args: { path?: string; content?: string }, theme: ThemeLike) =>
-            new Text(writeCall(theme, args ?? {}, clipWidth()), 0, 0),
+          renderCall: (args: { path?: string; content?: string }, theme: ThemeLike, context?: RenderCtx) => {
+            // Capture the before-content while the call is pending, so the result
+            // can render as a diff even if the pre-apply preview is off.
+            if (settings.writeDiff || settings.prePreview) ensureWriteBefore(args ?? {}, context);
+            const summary = writeCall(theme, args ?? {}, clipWidth());
+            const pv = writePreview(theme, args ?? {}, context);
+            return new Text(pv ? `${summary}\n${pv}` : summary, 0, 0);
+          },
           renderResult: (
             result: unknown,
             options: { expanded?: boolean; isPartial?: boolean },
             theme: ThemeLike,
+            context?: RenderCtx,
           ) => {
             if (options.isPartial) return new Text(theme.fg("warning", "Writing…"), 0, 0);
             if (isFailed(result)) {
               return new Text(theme.fg("error", textContent(result).split("\n")[0] || "Write failed"), 0, 0);
+            }
+            if (settings.writeDiff) {
+              const before = pstate(context).writeBefore;
+              const args = context?.args as { path?: string; content?: string } | undefined;
+              if (before && args) {
+                const after = typeof args.content === "string" ? args.content : "";
+                const diff = unifiedDiff(before.content, after);
+                if (diff) {
+                  const stats = statsLabel(theme, diffStats(diff), settings.diffStatMeter);
+                  const verb = before.existed ? "written" : "created";
+                  const headline = `${theme.fg("success", `✓ ${verb}`)}  ${stats}`;
+                  if (!options.expanded) return new Text(headline, 0, 0);
+                  const body = preview(diff, true, { collapsed: settings.collapsedLines, expanded: settings.diffLines });
+                  return new Text(`${headline}\n${colorizeDiff(theme, body, diffOptions(args.path))}`, 0, 0);
+                }
+              }
             }
             return new Text(theme.fg("success", "✓ written"), 0, 0);
           },

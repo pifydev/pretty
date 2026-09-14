@@ -84,6 +84,10 @@ Aliases are accepted where they are obvious: `list`/`dir` → `ls`, `search`/`rg
 
 **Running with [`@pify/shell-background`](https://github.com/pifydev/shell-background)?** Both packages register the `bash` tool, and pi has no way to compose two — whichever loads last wins. Turn pretty's bash renderer off with `/pretty off bash` and pretty steps aside entirely, leaving shell-background's async bash (with its `background: true` and 30-second auto-backgrounding) fully intact; every other renderer keeps working. (Turning bash off no longer re-registers a plain bash of its own, which previously clobbered shell-background — fixed in 0.9.1.)
 
+## MCP tools
+
+The seven built-ins are not the only tools in a session. MCP servers add their own, and by default those render with pi's verbose output — exactly what this package collapses everywhere else. So pretty extends the same one-line-summary-plus-expand treatment to MCP tools: it takes each MCP tool's real definition (execution untouched, as always) and adds only the renderers. It is careful to touch **only** MCP tools that nothing else is already rendering, so it never fights another extension for a tool — pi has no way to compose two renderers, and pretty will not be the one that clobbers. Turn it off with `mcpTools: false`. Non-MCP custom tools are left alone, precisely so pretty never overrides another extension's own rendering.
+
 ## Settings
 
 Every cap in a renderer is somebody's taste, and the right number depends on your terminal. Put them in `.pi/pretty.json` (project) or `<agentDir>/pretty.json` (global — the project file wins):
@@ -99,6 +103,7 @@ Every cap in a renderer is somebody's taste, and the right number depends on you
   "diffLineNumbers": true,
   "diffSplit": false,
   "diffStatMeter": true,
+  "mcpTools": true,
   "prePreview": true,
   "writeDiff": true,
   "summaryClip": 100

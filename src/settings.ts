@@ -31,6 +31,8 @@ export interface PrettySettings {
   diffSplit: boolean;
   /** Show a proportional add/remove meter bar next to the +N −M edit stats. */
   diffStatMeter: boolean;
+  /** Give MCP tools the same compact collapsed/expand rendering as the built-ins. */
+  mcpTools: boolean;
   /** Preview the projected edit/write diff while the call is pending, before it runs. */
   prePreview: boolean;
   /** Render a write result as a create/overwrite diff instead of "✓ written". */
@@ -49,6 +51,7 @@ export const DEFAULT_SETTINGS: PrettySettings = {
   diffLineNumbers: true,
   diffSplit: false,
   diffStatMeter: true,
+  mcpTools: true,
   prePreview: true,
   writeDiff: true,
   summaryClip: 100,
@@ -64,6 +67,7 @@ const LIMITS: Record<keyof PrettySettings, { min: number; max: number } | null> 
   diffLineNumbers: null,
   diffSplit: null,
   diffStatMeter: null,
+  mcpTools: null,
   prePreview: null,
   writeDiff: null,
   summaryClip: { min: 20, max: 500 },

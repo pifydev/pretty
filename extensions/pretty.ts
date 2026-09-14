@@ -40,6 +40,7 @@ import {
   statusLines,
 } from "../src/config.ts";
 import { colorizeDiff, diffStats, statsLabel, type DiffRenderOptions } from "../src/diff.ts";
+import { genericArgPreview, humanizeToolName, isMcpTool } from "../src/generic.ts";
 import { unifiedDiff } from "../src/linediff.ts";
 import {
   getEditReplacements,
@@ -55,6 +56,7 @@ import { DEFAULT_SETTINGS, formatSettings, resolveSettings, type PrettySettings 
 import {
   bashCall,
   bashSummary,
+  clip,
   editCall,
   effectiveClip,
   listCall,
@@ -67,6 +69,8 @@ import {
 } from "../src/summary.ts";
 import {
   DEFAULT_CONFIG,
+  PRETTY_TOOLS,
+  countLines,
   isRecord,
   textContent,
   type HighlightLine,
@@ -476,6 +480,76 @@ export default function pretty(pi: ExtensionAPI) {
     for (const tool of Object.keys(originals) as PrettyTool[]) applyTool(tool);
   }
 
+  // ── MCP / non-built-in tool rendering ────────────────────────────────
+  //
+  // Give MCP tools the same compact collapsed/expand treatment as the built-ins,
+  // by fetching their real definition (execute and all) and re-registering it
+  // with only renderCall/renderResult added — pretty's usual pattern, extended
+  // beyond the seven names. Scoped to MCP tools that no one else already renders,
+  // so it never clobbers another extension's renderer.
+
+  const wrappedGeneric = new Set<string>();
+
+  /** Compact renderers for a non-built-in tool, given its display label. */
+  function genericToolRenderers(label: string): Record<string, unknown> {
+    return {
+      renderCall: (args: unknown, theme: ThemeLike) => {
+        const head = `${theme.fg("toolTitle", theme.bold(label))} `;
+        const subject = clip(genericArgPreview(args), clipWidth());
+        return new Text(subject ? head + theme.fg("accent", subject) : head.trimEnd(), 0, 0);
+      },
+      renderResult: (result: unknown, options: { expanded?: boolean; isPartial?: boolean }, theme: ThemeLike) => {
+        if (options.isPartial) return new Text(theme.fg("warning", "Running…"), 0, 0);
+        const output = tidyPreview(sanitizeOutput(textContent(result)));
+        if (isFailed(result)) {
+          return new Text(theme.fg("error", `✗ ${output.split("\n").find((l) => l.trim()) ?? "failed"}`), 0, 0);
+        }
+        const lines = countLines(output);
+        const summary =
+          theme.fg("success", "✓") + theme.fg("dim", lines > 0 ? ` ${lines} output ${lines === 1 ? "line" : "lines"}` : " done");
+        const body = output && options.expanded ? `\n${preview(output, true, bodyLimits())}` : "";
+        return new Text(summary + body, 0, 0);
+      },
+    };
+  }
+
+  /** Wrap every MCP tool that has no renderer yet with the compact renderers. */
+  function wrapGenericTools(): void {
+    if (!settings.mcpTools) return;
+    const api = pi as unknown as {
+      getAllTools?: () => Array<{ name?: unknown; description?: unknown }>;
+      getToolDefinition?: (name: string) => (AnyTool & { renderCall?: unknown; renderResult?: unknown }) | undefined;
+    };
+    if (typeof api.getAllTools !== "function" || typeof api.getToolDefinition !== "function") return;
+    let tools: Array<{ name?: unknown; description?: unknown }>;
+    try {
+      tools = api.getAllTools() ?? [];
+    } catch {
+      return;
+    }
+    const builtins = PRETTY_TOOLS as readonly string[];
+    for (const info of tools) {
+      const name = typeof info?.name === "string" ? info.name : "";
+      if (!name || wrappedGeneric.has(name) || builtins.includes(name)) continue;
+      if (!isMcpTool(name, info?.description)) continue;
+      let def: (AnyTool & { renderCall?: unknown; renderResult?: unknown }) | undefined;
+      try {
+        def = api.getToolDefinition(name);
+      } catch {
+        def = undefined;
+      }
+      if (!def) continue;
+      // Something already renders this tool — do not clobber it.
+      if (typeof def.renderCall === "function" || typeof def.renderResult === "function") continue;
+      try {
+        pi.registerTool({ ...def, ...genericToolRenderers(humanizeToolName(name)) } as never);
+        wrappedGeneric.add(name);
+      } catch {
+        // best-effort; a tool that refuses re-registration keeps pi's default
+      }
+    }
+  }
+
   // ── Lifecycle ────────────────────────────────────────────────────────
 
   pi.on("session_start", async (_event, ctx) => {
@@ -483,6 +557,7 @@ export default function pretty(pi: ExtensionAPI) {
     loadSettings(ctx.cwd);
     config = replayBranch(ctx.sessionManager.getBranch() as never);
     applyAll();
+    wrapGenericTools();
     if (settingsWarnings.length > 0 && ctx.hasUI) {
       ctx.ui.notify(`pretty settings: ${settingsWarnings.join("; ")}`, "warning");
     }
@@ -491,6 +566,12 @@ export default function pretty(pi: ExtensionAPI) {
   pi.on("session_tree", async (_event, ctx) => {
     config = replayBranch(ctx.sessionManager.getBranch() as never);
     applyAll();
+  });
+
+  // MCP tools often register only once their server connects, after session
+  // start — so re-scan before each turn (already-wrapped tools are skipped).
+  pi.on("before_agent_start", async () => {
+    wrapGenericTools();
   });
 
   // ── Command ──────────────────────────────────────────────────────────

@@ -59,6 +59,7 @@ import {
   clip,
   editCall,
   effectiveClip,
+  failureLine,
   listCall,
   matchSummary,
   readCall,
@@ -303,7 +304,7 @@ export default function pretty(pi: ExtensionAPI) {
               isRecord(result) && isRecord(result.details) && isRecord(result.details.truncation)
                 ? result.details.truncation.truncated === true
                 : false;
-            const summary = readSummary(theme, output, truncated, failed);
+            const summary = readSummary(theme, output, truncated, failed, clipWidth());
             if (!options.expanded || failed) return new Text(summary, 0, 0);
             const path =
               isRecord(result) && isRecord(result.details) && typeof result.details.path === "string"
@@ -336,7 +337,7 @@ export default function pretty(pi: ExtensionAPI) {
               return new Text(`${theme.fg("warning", "Running…")}\n${preview(output, false, bodyLimits())}`, 0, 0);
             }
             const failed = isFailed(result);
-            const summary = bashSummary(theme, output, failed);
+            const summary = bashSummary(theme, output, failed, clipWidth());
             const body = output && (options.expanded || failed) ? `\n${preview(output, options.expanded === true, bodyLimits())}` : "";
             return new Text(summary + body, 0, 0);
           },
@@ -356,7 +357,7 @@ export default function pretty(pi: ExtensionAPI) {
           ) => {
             if (options.isPartial) return new Text(theme.fg("warning", "Editing…"), 0, 0);
             if (isFailed(result)) {
-              return new Text(theme.fg("error", textContent(result).split("\n")[0] || "Edit failed"), 0, 0);
+              return new Text(theme.fg("error", failureLine(textContent(result).split("\n")[0] || "Edit failed", clipWidth())), 0, 0);
             }
             const diff =
               isRecord(result) && isRecord(result.details) && typeof result.details.diff === "string"
@@ -391,7 +392,7 @@ export default function pretty(pi: ExtensionAPI) {
           ) => {
             if (options.isPartial) return new Text(theme.fg("warning", "Writing…"), 0, 0);
             if (isFailed(result)) {
-              return new Text(theme.fg("error", textContent(result).split("\n")[0] || "Write failed"), 0, 0);
+              return new Text(theme.fg("error", failureLine(textContent(result).split("\n")[0] || "Write failed", clipWidth())), 0, 0);
             }
             if (settings.writeDiff) {
               const before = pstate(context).writeBefore;
@@ -432,6 +433,7 @@ export default function pretty(pi: ExtensionAPI) {
               output,
               failed,
               tool === "grep" ? { one: "match", many: "matches" } : { one: "result", many: "results" },
+              clipWidth(),
             );
             if (!options.expanded || failed || !output) return new Text(summary, 0, 0);
             return new Text(`${summary}\n${preview(output, true, bodyLimits())}`, 0, 0);
@@ -448,7 +450,7 @@ export default function pretty(pi: ExtensionAPI) {
             if (options.isPartial) return new Text(theme.fg("warning", "Listing…"), 0, 0);
             const output = tidyPreview(sanitizeOutput(textContent(result)));
             const failed = isFailed(result);
-            const summary = matchSummary(theme, output, failed, { one: "entry", many: "entries" });
+            const summary = matchSummary(theme, output, failed, { one: "entry", many: "entries" }, clipWidth());
             if (!options.expanded || failed) return new Text(summary, 0, 0);
             return new Text(`${summary}\n${preview(output, true, bodyLimits())}`, 0, 0);
           },
@@ -502,7 +504,7 @@ export default function pretty(pi: ExtensionAPI) {
         if (options.isPartial) return new Text(theme.fg("warning", "Running…"), 0, 0);
         const output = tidyPreview(sanitizeOutput(textContent(result)));
         if (isFailed(result)) {
-          return new Text(theme.fg("error", `✗ ${output.split("\n").find((l) => l.trim()) ?? "failed"}`), 0, 0);
+          return new Text(theme.fg("error", `✗ ${failureLine(output.split("\n").find((l) => l.trim()) ?? "failed", clipWidth(), 2)}`), 0, 0);
         }
         const lines = countLines(output);
         const summary =

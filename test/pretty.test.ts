@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   clip,
+  failureLine,
   bashCall,
   bashSummary,
   editCall,
@@ -376,4 +377,26 @@ test("the detail expand tier raises the expanded cap to detailLines", () => {
   // detailLines is clamped like the other caps.
   assert.equal(resolveSettings({ detailLines: 999999 }).settings.detailLines, 50000);
   assert.equal(resolveSettings({ detailLines: 2 }).settings.detailLines, 5);
+});
+
+test("a failure line is clipped like every other summary, so the row stays one line", () => {
+  const long = "ENOENT: no such file or directory, open '" + "x".repeat(400) + "'";
+  // read / grep / ls failures
+  assert.ok(readSummary(theme, long, false, true, 60).length <= 60, "read failure clipped");
+  assert.ok(matchSummary(theme, long, true, { one: "m", many: "ms" }, 60).length <= 60, "match failure clipped");
+  // bash prepends "✗ " — the marker is reserved, so the whole row still fits
+  const bash = bashSummary(theme, long, true, 60);
+  assert.ok(bash.startsWith("✗ "));
+  assert.ok(bash.length <= 60, `bash failure row ${bash.length} <= 60`);
+  // the clip keeps both ends, so the useful head survives
+  assert.ok(bash.includes("ENOENT"), bash);
+  assert.ok(bash.includes("…"), "elided in the middle");
+});
+
+test("failureLine reserves the marker width and never returns a negative budget", () => {
+  assert.equal(failureLine("short", 60), "short");
+  assert.ok(failureLine("y".repeat(200), 20).length <= 20);
+  assert.ok(failureLine("y".repeat(200), 20, 2).length <= 18, "reserve is subtracted");
+  // an absurd reserve floors at a usable minimum instead of going negative
+  assert.ok(failureLine("y".repeat(200), 3, 99).length > 0);
 });

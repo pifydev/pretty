@@ -59,8 +59,23 @@ export function readCall(
   return title(theme, "Read") + theme.fg("accent", compactPath(args.path ?? "", max)) + range;
 }
 
-export function readSummary(theme: ThemeLike, output: string, truncated: boolean, failed: boolean): string {
-  if (failed) return theme.fg("error", output.split("\n")[0] || "Read failed");
+/**
+ * A failure line has to stay on the collapsed row like every other summary.
+ * `reserve` is the width of any marker the caller prepends (e.g. "✗ "), so the
+ * clipped text plus that marker still fits the line.
+ */
+export function failureLine(text: string, max: number = DEFAULT_CLIP, reserve = 0): string {
+  return clip(text.trim(), Math.max(4, max - reserve));
+}
+
+export function readSummary(
+  theme: ThemeLike,
+  output: string,
+  truncated: boolean,
+  failed: boolean,
+  max: number = DEFAULT_CLIP,
+): string {
+  if (failed) return theme.fg("error", failureLine(output.split("\n")[0] || "Read failed", max));
   const lines = countLines(output);
   return theme.fg("dim", `${lines} ${lines === 1 ? "line" : "lines"}${truncated ? " · truncated" : ""}`);
 }
@@ -81,10 +96,11 @@ export function bashCall(
   return title(theme, "Bash") + theme.fg("accent", shown);
 }
 
-export function bashSummary(theme: ThemeLike, output: string, failed: boolean): string {
+export function bashSummary(theme: ThemeLike, output: string, failed: boolean, max: number = DEFAULT_CLIP): string {
   if (failed) {
     const first = output.split("\n").find((l) => l.trim()) ?? "Command failed";
-    return theme.fg("error", `✗ ${first}`);
+    // "✗ " is two columns the clip must leave room for.
+    return theme.fg("error", `✗ ${failureLine(first, max, 2)}`);
   }
   const lines = countLines(output);
   return theme.fg("success", "✓") + theme.fg("dim", lines > 0 ? ` ${lines} output ${lines === 1 ? "line" : "lines"}` : " done");
@@ -127,8 +143,9 @@ export function matchSummary(
   output: string,
   failed: boolean,
   noun: { one: string; many: string },
+  max: number = DEFAULT_CLIP,
 ): string {
-  if (failed) return theme.fg("error", output.split("\n")[0] || "failed");
+  if (failed) return theme.fg("error", failureLine(output.split("\n")[0] || "failed", max));
   const lines = countLines(output);
   if (lines === 0) return theme.fg("dim", `no ${noun.many}`);
   return theme.fg("dim", `${lines} ${lines === 1 ? noun.one : noun.many}`);

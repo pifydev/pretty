@@ -23,7 +23,7 @@ Nothing here changes what a tool does. If this extension is removed, every comma
 | `grep` / `find` | `Grep TODO in src` → `7 matches` | The match list |
 | `ls` | `List packages` → `23 entries` | The listing |
 
-Expand with pi's standard toggle (Ctrl+O on a tool block). **Ctrl+Shift+O** toggles a deeper "more detail" tier that raises the expanded line caps to `detailLines` (default 1000) — for the times a truncated 200-line view isn't enough. Failures always show the first error line in the error colour, collapsed or not — a failure you have to expand to notice is a failure you will miss.
+Expand with pi's standard toggle (Ctrl+O on a tool block). **Ctrl+Shift+O** toggles a deeper "more detail" tier that raises the expanded line caps to `detailLines` (default 1000) — for the times a truncated 200-line view isn't enough. Failures always show the first error line in the error colour, collapsed or not — a failure you have to expand to notice is a failure you will miss. That line is clipped to the same width budget as every other summary, so a long error message cannot wrap the collapsed row onto a second line.
 
 Output rendered into these compact rows is first stripped of everything but colour: a build tool's progress bar (cursor moves, erase-line, carriage returns) or a program that sets the window title would otherwise scribble over the row or the rest of the transcript. Only SGR colour survives, and runs of blank lines are collapsed — display only, the result the model sees is pi's own, untouched.
 

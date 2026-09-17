@@ -46,6 +46,39 @@ test("projectEdit applies multiple edits in sequence", () => {
   assert.equal(out, "A B");
 });
 
+test("projectEdit previews a CRLF file whose multi-line oldText uses LF", () => {
+  // The model sends oldText with "\n"; on disk the file is "\r\n". Matching the
+  // raw bytes never succeeds, so the old code dropped the preview. Normalizing
+  // both to LF (as pi's edit does) makes it match and project.
+  const crlf = "line1\r\nline2\r\nline3\r\n";
+  const out = projectEdit(crlf, [{ oldText: "line1\nline2", newText: "X" }]);
+  assert.equal(out, "X\nline3\n");
+});
+
+test("projectEdit rejects a chained edit pi would reject (matches the ORIGINAL only)", () => {
+  // pi matches every edit against the ORIGINAL content, so the second edit's
+  // "bar" is not found (the file only has "foo") and pi throws. The preview must
+  // agree: project to null rather than show a confident "baz" that never lands.
+  assert.equal(projectEdit("foo", [
+    { oldText: "foo", newText: "bar" },
+    { oldText: "bar", newText: "baz" },
+  ]), null);
+});
+
+test("projectEdit rejects overlapping edits like pi does", () => {
+  assert.equal(projectEdit("abcdef", [
+    { oldText: "abcd", newText: "X" },
+    { oldText: "cdef", newText: "Y" },
+  ]), null);
+});
+
+test("projectEdit rejects a duplicated oldText (both match the same span)", () => {
+  assert.equal(projectEdit("solo", [
+    { oldText: "solo", newText: "A" },
+    { oldText: "solo", newText: "B" },
+  ]), null);
+});
+
 test("projectWrite returns the content argument", () => {
   assert.equal(projectWrite({ content: "hello" }), "hello");
   assert.equal(projectWrite({ path: "x" }), null);

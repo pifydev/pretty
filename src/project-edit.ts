@@ -52,23 +52,53 @@ export function getEditReplacements(args: unknown): EditReplacement[] {
     : [];
 }
 
+/** Strip a leading BOM and fold CRLF/CR to LF, the way pi's edit normalizes. */
+function normalizeToLF(text: string): string {
+  return text.replace(/^﻿/, "").replace(/\r\n?/g, "\n");
+}
+
 /**
- * Apply the replacements to `old`, requiring each `oldText` to match exactly
- * once against the running content. Returns the projected content, or null when
- * any replacement is empty, missing, or ambiguous (so no preview is shown).
+ * Project an edit the way pi's own edit tool does (edit-diff.js
+ * `applyEditsToNormalizedContent`): normalize the file and every oldText/newText
+ * to LF, match EVERY edit against the same ORIGINAL normalized content, reject a
+ * missing / duplicated / overlapping edit, then apply the replacements from last
+ * index to first so earlier offsets stay valid. Returns the projected (LF)
+ * content, or null when any edit does not match uniquely — so the preview can
+ * never claim a change pi would reject.
+ *
+ * Two divergences from the old sequential matcher are the point of this:
+ * a CRLF file (whose `oldText` the model sends with `\n`) now matches, and a
+ * chained `[{a→b},{b→c}]` on a file containing only `a` projects to null (pi
+ * rejects it — `b` is not in the original), instead of quietly showing `c`.
+ * pi's fuzzy fallback (NFKC, trailing-whitespace, smart quotes) is deliberately
+ * NOT mirrored: an edit only pi's fuzzy pass would match projects to null and
+ * the caller simply shows no preview, which is conservative, never wrong.
  */
 export function projectEdit(old: string, replacements: readonly EditReplacement[]): string | null {
   if (replacements.length === 0) return null;
-  let content = old;
+  const content = normalizeToLF(old);
+  const matches: Array<{ start: number; end: number; newText: string }> = [];
   for (const { oldText, newText } of replacements) {
-    if (oldText === "") return null;
-    const first = content.indexOf(oldText);
-    if (first === -1) return null;
-    const second = content.indexOf(oldText, first + oldText.length);
+    const needle = normalizeToLF(oldText);
+    if (needle === "") return null; // pi throws on an empty oldText
+    const first = content.indexOf(needle);
+    if (first === -1) return null; // not in the ORIGINAL content — pi rejects it
+    const second = content.indexOf(needle, first + needle.length);
     if (second !== -1) return null; // not unique — pi would reject it too
-    content = content.slice(0, first) + newText + content.slice(first + oldText.length);
+    matches.push({ start: first, end: first + needle.length, newText: normalizeToLF(newText) });
   }
-  return content;
+  // Overlapping edits are rejected by pi; sort by position to detect them.
+  const sorted = [...matches].sort((a, b) => a.start - b.start);
+  for (let i = 1; i < sorted.length; i++) {
+    if (sorted[i]!.start < sorted[i - 1]!.end) return null;
+  }
+  // Apply from last to first so each slice index refers to the original content.
+  let out = content;
+  for (let i = sorted.length - 1; i >= 0; i--) {
+    const m = sorted[i]!;
+    out = out.slice(0, m.start) + m.newText + out.slice(m.end);
+  }
+  return out;
 }
 
 /** The new full content a write produces (the argument itself). */

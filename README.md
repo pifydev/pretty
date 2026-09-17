@@ -63,6 +63,8 @@ The `+N −M` count carries a small proportional meter (`━━━━`, green/re
 
 While an `edit` or `write` call is still pending — the arguments are in, the tool has not run yet — the projected diff is shown right there, so you read what *will* change before it does (idea from [MasuRii/pi-tool-display](https://github.com/MasuRii/pi-tool-display)). The edit is applied to the current file in memory and diffed; the write is diffed against the file it would overwrite (or shown whole for a new file). It only appears when the projection is unambiguous — an edit whose `oldText` matches exactly once, the same rule pi's edit itself enforces — so the preview can never disagree with what the tool does. Nothing is written; the file is only read.
 
+The projection mirrors pi's own edit semantics so the preview and the result agree: the file and every `oldText`/`newText` are normalized to LF before matching (so a preview appears on **CRLF files** too, where the model's `\n` would never match the raw `\r\n` on disk), and each edit in an `edits: […]` array is matched against the *original* content, not the running result — so a chained edit pi would reject (its `oldText` only exists after an earlier edit is applied) shows no preview rather than a confident diff that never lands. pi's fuzzy fallback (trailing whitespace, smart quotes) is not mirrored; those simply show no preview, which is conservative rather than wrong.
+
 The read is sandboxed and bounded: the target must resolve, through symlinks, inside the working directory (a path pointing outside is skipped), and a file over 1 MB is not read. The result is cached per call so a pending row does not re-read the file every frame. Turn it off with `prePreview`.
 
 A finished `write` is then rendered as a diff too — `✓ created +34 -0` for a new file, `✓ written +12 -5` for an overwrite, expandable to the full change — instead of a bare `✓ written`, using the content captured before the write ran. Turn it off with `writeDiff`. Both fall back silently to the plain summary when the before-content could not be read.
@@ -82,11 +84,22 @@ Each renderer toggles independently, and the choice is persisted per session:
 
 Aliases are accepted where they are obvious: `list`/`dir` → `ls`, `search`/`rg` → `grep`, `cat` → `read`, `sh`/`shell` → `bash`.
 
-**Running with [`@pify/shell-background`](https://github.com/pifydev/shell-background)?** Both packages register the `bash` tool, and pi has no way to compose two — whichever loads last wins. Turn pretty's bash renderer off with `/pretty off bash` and pretty steps aside entirely, leaving shell-background's async bash (with its `background: true` and 30-second auto-backgrounding) fully intact; every other renderer keeps working. (Turning bash off no longer re-registers a plain bash of its own, which previously clobbered shell-background — fixed in 0.9.1.)
+### Coexistence with @pify/shell-background
+
+[`@pify/shell-background`](https://github.com/pifydev/shell-background) also registers the `bash` tool — an async bash with `background: true` and 30-second auto-backgrounding — and pi has no way to compose two renderers for one tool. On pi 0.85.x a duplicate tool name resolves to the **first-loaded** extension, so the two packages must not both claim `bash`.
+
+Pretty handles this automatically. It does **not** register `bash` at session start; instead, before the first turn (after every extension has loaded), it checks who owns `bash`:
+
+- If `bash` is still pi's builtin, pretty claims it and adds its compact renderers.
+- If another extension (e.g. shell-background) already owns `bash`, pretty **steps aside** and never touches it. shell-background's async bash stays fully intact, and every other pretty renderer keeps working. The one cost is that pretty's compact rendering is lost for that tool — `/pretty` status says so plainly: `bash: rendered by <owner>; pretty's bash renderers are off`.
+
+Because pretty only ever registers `bash` when nothing else owns it, load order no longer matters and there is nothing to configure. `/pretty off bash` and `/pretty bash` still toggle pretty's own bash renderer on and off (with immediate effect) whenever pretty is the owner; when another extension owns `bash`, the toggle reports that it left the tool untouched.
 
 ## MCP tools
 
-The seven built-ins are not the only tools in a session. MCP servers add their own, and by default those render with pi's verbose output — exactly what this package collapses everywhere else. So pretty extends the same one-line-summary-plus-expand treatment to MCP tools: it takes each MCP tool's real definition (execution untouched, as always) and adds only the renderers. It is careful to touch **only** MCP tools that nothing else is already rendering, so it never fights another extension for a tool — pi has no way to compose two renderers, and pretty will not be the one that clobbers. Turn it off with `mcpTools: false`. Non-MCP custom tools are left alone, precisely so pretty never overrides another extension's own rendering.
+> **Currently inactive — pending upstream support.** Extending compact rendering to MCP tools requires taking each tool's real definition (its `execute`) and re-registering it with only the renderers added. pi's extension API exposes `getAllTools()` (names, descriptions, parameters, prompt guidelines and source metadata) but deliberately **not** a tool's `execute`, so no published pi (through 0.85.x) lets an extension wrap another tool this way. The code path is in place and will light up if a future pi exposes tool definitions to extensions; until then it is a no-op, and `/pretty` status reports `MCP tool rendering: unavailable — this pi does not expose tool definitions (execute) to extensions`.
+
+The intent, once the API exists: the seven built-ins are not the only tools in a session — MCP servers add their own, and by default those render with pi's verbose output, exactly what this package collapses everywhere else. Pretty would extend the same one-line-summary-plus-expand treatment to MCP tools (execution untouched, as always), touching **only** tools that nothing else is already rendering so it never fights another extension. Turn the (currently inert) feature off with `mcpTools: false`.
 
 ## Settings
 

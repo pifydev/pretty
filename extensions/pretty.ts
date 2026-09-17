@@ -141,6 +141,92 @@ export default function pretty(pi: ExtensionAPI) {
   }
   let originals: Record<PrettyTool, AnyTool> | null = null;
 
+  // ── bash ownership ───────────────────────────────────────────────────
+  //
+  // bash is the one built-in another package legitimately owns —
+  // @pify/shell-background registers an async bash (background:true, 30s
+  // auto-background). pi has no tool-compose API and resolves a duplicate tool
+  // name to the FIRST-loaded extension (runner.js getAllRegisteredTools), so if
+  // pretty registered a pristine bash at session_start it would win by load
+  // order and silently replace shell-background's. So pretty does NOT register
+  // bash at session_start; it waits for before_agent_start — which runs after
+  // every extension's session_start — and only claims bash when getAllTools()
+  // reports it as pi's builtin (or absent). Registering there still takes effect
+  // for the turn: registerTool() calls runtime.refreshTools() →
+  // _refreshToolRegistry(), which rebuilds the tool registry and re-activates
+  // the already-active bash with pretty's renderers before _runAgentPrompt.
+  //
+  // bashResolved: the before_agent_start ownership check has run this session.
+  // bashForeign:  label of another extension that owns bash (null = pretty may
+  //               own it — builtin or already pretty's). Drives /pretty status.
+  let bashResolved = false;
+  let bashForeign: string | null = null;
+
+  /** The source metadata pi reports for the bash tool, or null if unavailable. */
+  function bashSourceInfo(): { source: string; path: string } | null {
+    try {
+      const getAll = (pi as unknown as { getAllTools?: () => Array<{ name?: unknown; sourceInfo?: unknown }> })
+        .getAllTools;
+      if (typeof getAll !== "function") return null;
+      const bash = getAll().find((t) => t?.name === "bash");
+      if (!bash || !isRecord(bash.sourceInfo)) return null;
+      const info = bash.sourceInfo;
+      return {
+        source: typeof info.source === "string" ? info.source : "",
+        path: typeof info.path === "string" ? info.path : "",
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  /** A readable name for the extension that owns bash, for the status line. */
+  function ownerLabel(info: { source: string; path: string }): string {
+    // Extension paths look like "<npm:@pify/shell-background>" or a local file
+    // path; strip the synthetic angle brackets and prefer the path (it names the
+    // package), falling back to the source kind.
+    const p = info.path.replace(/^<(.*)>$/, "$1");
+    return p || info.source || "another extension";
+  }
+
+  /** (Re-)register bash with or without pretty's renderers. Caller guards ownership. */
+  function registerBash(withPretty: boolean): void {
+    if (!originals) return;
+    pi.registerTool({
+      ...originals.bash,
+      ...(withPretty ? renderersFor("bash") : {}),
+    } as never);
+  }
+
+  /**
+   * Register/refresh bash for the current config — but only when pretty may own
+   * the slot. A no-op while another extension owns bash (never clobber it) and
+   * before the before_agent_start ownership check has run (nothing to refresh
+   * yet). Safe to call repeatedly: from resolveBash, from a /pretty toggle, and
+   * from session_tree (where it re-asserts pretty's own registration only).
+   */
+  function applyBash(): void {
+    if (!originals || bashForeign !== null || !bashResolved) return;
+    registerBash(!config.disabled.includes("bash"));
+  }
+
+  /**
+   * Once per session, at before_agent_start: decide whether pretty may render
+   * bash. If another extension already owns it, step aside and remember who; if
+   * bash is pi's builtin (or absent), claim it per the current config.
+   */
+  function resolveBash(): void {
+    if (bashResolved || !originals) return;
+    bashResolved = true;
+    const info = bashSourceInfo();
+    if (info && info.source !== "builtin" && info.source !== "") {
+      bashForeign = ownerLabel(info); // another extension owns bash — hands off
+      return;
+    }
+    bashForeign = null;
+    applyBash();
+  }
+
   function isFailed(result: unknown): boolean {
     return isRecord(result) && result.isError === true;
   }
@@ -294,6 +380,7 @@ export default function pretty(pi: ExtensionAPI) {
             result: unknown,
             options: { expanded?: boolean; isPartial?: boolean },
             theme: ThemeLike,
+            context?: { args?: { path?: string } },
           ) => {
             if (options.isPartial) return new Text(theme.fg("warning", "Reading…"), 0, 0);
             // Strip any non-SGR escapes a file's bytes might carry so they
@@ -306,14 +393,19 @@ export default function pretty(pi: ExtensionAPI) {
                 : false;
             const summary = readSummary(theme, output, truncated, failed, clipWidth());
             if (!options.expanded || failed) return new Text(summary, 0, 0);
-            const path =
+            // pi's read result carries no path in details (only { truncation }),
+            // so the language has to come from the call args, which pi passes as
+            // the 4th render-context argument — the same source the edit renderer
+            // uses. Fall back to details.path for a future pi that sets it.
+            const detailsPath =
               isRecord(result) && isRecord(result.details) && typeof result.details.path === "string"
                 ? result.details.path
                 : "";
+            const path = context?.args?.path ?? detailsPath;
             const language = path ? getLanguageFromPath(path) : undefined;
             let body = output;
             try {
-              if (language) body = highlightCode(output, language).join("\n");
+              if (language && settings.syntaxHighlight) body = highlightCode(output, language).join("\n");
             } catch {
               // highlighting is best-effort
             }
@@ -461,15 +553,16 @@ export default function pretty(pi: ExtensionAPI) {
   /** (Re-)register one tool with or without pretty renderers. */
   function applyTool(tool: PrettyTool): void {
     if (!originals) return;
+    // bash is special: pi may not let pretty own it (another extension might),
+    // and the ownership decision is made once in before_agent_start. Route every
+    // bash (re-)registration through applyBash, which is a no-op unless pretty
+    // owns the slot — so a /pretty toggle on bash flips renderers when pretty
+    // owns bash and does nothing when a foreign extension does.
+    if (tool === "bash") {
+      applyBash();
+      return;
+    }
     const withPretty = !config.disabled.includes(tool);
-    // When bash is turned off, do NOT re-register it. Another package may own the
-    // bash tool — e.g. @pify/shell-background's async bash — and pi has no tool
-    // compose API, so re-registering even a pristine copy would clobber it,
-    // dropping that package's behaviour AND pretty's renderers (the worst of
-    // both). Leaving it unregistered lets whoever else registered bash keep it.
-    // The other built-ins are pretty's alone, so a disabled one is re-registered
-    // pristine to revert its rendering to pi's default within the session.
-    if (!withPretty && tool === "bash") return;
     const original = originals[tool];
     pi.registerTool({
       ...original,
@@ -479,7 +572,13 @@ export default function pretty(pi: ExtensionAPI) {
 
   function applyAll(): void {
     if (!originals) return;
-    for (const tool of Object.keys(originals) as PrettyTool[]) applyTool(tool);
+    // bash is deliberately skipped here: it is resolved in before_agent_start
+    // (session_start runs before every other extension's, so we cannot yet see
+    // who owns bash). applyBash is a no-op until then anyway.
+    for (const tool of Object.keys(originals) as PrettyTool[]) {
+      if (tool === "bash") continue;
+      applyTool(tool);
+    }
   }
 
   // ── MCP / non-built-in tool rendering ────────────────────────────────
@@ -491,6 +590,15 @@ export default function pretty(pi: ExtensionAPI) {
   // so it never clobbers another extension's renderer.
 
   const wrappedGeneric = new Set<string>();
+
+  // MCP/generic rendering needs a tool's execute, which pretty gets by
+  // re-registering the tool's full definition. The extension API exposes
+  // getAllTools() (name/description/parameters/guidelines + sourceInfo) but NOT
+  // getToolDefinition — that lives only on ExtensionRunner/AgentSession, so no
+  // published pi (≤0.85.1) hands an extension another tool's execute. Without it
+  // wrapGenericTools can never wrap anything; record that so /pretty status can
+  // say so honestly instead of the feature silently doing nothing.
+  let mcpUnavailable = false;
 
   /** Compact renderers for a non-built-in tool, given its display label. */
   function genericToolRenderers(label: string): Record<string, unknown> {
@@ -558,6 +666,10 @@ export default function pretty(pi: ExtensionAPI) {
     originals = buildOriginals(ctx.cwd);
     loadSettings(ctx.cwd);
     config = replayBranch(ctx.sessionManager.getBranch() as never);
+    // A fresh session re-decides bash ownership in before_agent_start.
+    bashResolved = false;
+    bashForeign = null;
+    mcpUnavailable = typeof (pi as unknown as { getToolDefinition?: unknown }).getToolDefinition !== "function";
     applyAll();
     wrapGenericTools();
     if (settingsWarnings.length > 0 && ctx.hasUI) {
@@ -568,11 +680,17 @@ export default function pretty(pi: ExtensionAPI) {
   pi.on("session_tree", async (_event, ctx) => {
     config = replayBranch(ctx.sessionManager.getBranch() as never);
     applyAll();
+    // Re-assert bash for the replayed config, but ONLY when pretty already owns
+    // it this session: applyBash is a no-op otherwise, so navigating /tree can
+    // never register (and thus clobber) bash that a foreign extension owns.
+    applyBash();
   });
 
-  // MCP tools often register only once their server connects, after session
-  // start — so re-scan before each turn (already-wrapped tools are skipped).
+  // Runs after every extension's session_start. Two jobs, both idempotent:
+  // resolve bash ownership once (register bash only if pretty may own it), and
+  // re-scan for MCP tools that register only once their server connects.
   pi.on("before_agent_start", async () => {
+    resolveBash();
     wrapGenericTools();
   });
 
@@ -588,7 +706,21 @@ export default function pretty(pi: ExtensionAPI) {
       }
       if (command.kind === "status") {
         if (ctx.hasUI) {
-          ctx.ui.notify(`Pretty renderers\n${statusLines(config).join("\n")}\n${PRETTY_USAGE}`, "info");
+          const lines = ["Pretty renderers", ...statusLines(config)];
+          // Coexistence: name the extension that owns bash, if it isn't pretty.
+          if (bashForeign !== null) {
+            lines.push(`bash: rendered by ${bashForeign}; pretty's bash renderers are off`);
+          }
+          // Honesty: MCP rendering can't work without a tool-definition accessor.
+          if (mcpUnavailable && settings.mcpTools) {
+            lines.push(
+              "MCP tool rendering: unavailable — this pi does not expose tool definitions (execute) to extensions",
+            );
+          }
+          lines.push(formatSettings(settings, settingsSource));
+          if (settingsWarnings.length > 0) lines.push(`Warnings: ${settingsWarnings.join("; ")}`);
+          lines.push(PRETTY_USAGE);
+          ctx.ui.notify(lines.join("\n"), "info");
         }
         return;
       }
@@ -601,7 +733,17 @@ export default function pretty(pi: ExtensionAPI) {
       ctx.ui.notify(
         changed.length === 0
           ? "Nothing changed."
-          : changed.map((t) => `pretty ${t}: ${config.disabled.includes(t) ? "off" : "on"}`).join("\n"),
+          : changed
+              .map((t) => {
+                const state = config.disabled.includes(t) ? "off" : "on";
+                // A bash toggle can't change rendering while another extension
+                // owns bash — say so instead of a misleading bare "on"/"off".
+                if (t === "bash" && bashForeign !== null) {
+                  return `pretty bash: ${state} — bash is rendered by ${bashForeign}; pretty leaves it untouched (nothing changes until that extension is removed and you /reload)`;
+                }
+                return `pretty ${t}: ${state}`;
+              })
+              .join("\n"),
         "info",
       );
     },

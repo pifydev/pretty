@@ -86,7 +86,7 @@ Aliases are accepted where they are obvious: `list`/`dir` → `ls`, `search`/`rg
 
 ### Coexistence with @pify/shell-background
 
-[`@pify/shell-background`](https://github.com/pifydev/shell-background) also registers the `bash` tool — an async bash with `background: true` and 30-second auto-backgrounding — and pi has no way to compose two renderers for one tool. On pi 0.85.x a duplicate tool name resolves to the **first-loaded** extension, so the two packages must not both claim `bash`.
+[`@pify/shell-background`](https://github.com/pifydev/shell-background) also registers the `bash` tool — an async bash with `background: true` and 30-second auto-backgrounding — and pi has no way to compose two renderers for one tool. On pi 0.85–0.87 a duplicate tool name resolves to the **first-loaded** extension, so the two packages must not both claim `bash`.
 
 Pretty handles this automatically. It does **not** register `bash` at session start; instead, before the first turn (after every extension has loaded), it checks who owns `bash`:
 
@@ -97,7 +97,7 @@ Because pretty only ever registers `bash` when nothing else owns it, load order 
 
 ## MCP tools
 
-> **Currently inactive — pending upstream support.** Extending compact rendering to MCP tools requires taking each tool's real definition (its `execute`) and re-registering it with only the renderers added. pi's extension API exposes `getAllTools()` (names, descriptions, parameters, prompt guidelines and source metadata) but deliberately **not** a tool's `execute`, so no published pi (through 0.85.x) lets an extension wrap another tool this way. The code path is in place and will light up if a future pi exposes tool definitions to extensions; until then it is a no-op, and `/pretty` status reports `MCP tool rendering: unavailable — this pi does not expose tool definitions (execute) to extensions`.
+> **Currently inactive — pending upstream support.** Extending compact rendering to MCP tools requires taking each tool's real definition (its `execute`) and re-registering it with only the renderers added. pi's extension API exposes `getAllTools()` (names, descriptions, parameters, prompt guidelines and source metadata) but deliberately **not** a tool's `execute`, so no published pi (through 0.87.0) lets an extension wrap another tool this way. The code path is in place and will light up if a future pi exposes tool definitions to extensions; until then it is a no-op, and `/pretty` status reports `MCP tool rendering: unavailable — this pi does not expose tool definitions (execute) to extensions`.
 
 The intent, once the API exists: the seven built-ins are not the only tools in a session — MCP servers add their own, and by default those render with pi's verbose output, exactly what this package collapses everywhere else. Pretty would extend the same one-line-summary-plus-expand treatment to MCP tools (execution untouched, as always), touching **only** tools that nothing else is already rendering so it never fights another extension. Turn the (currently inert) feature off with `mcpTools: false`.
 

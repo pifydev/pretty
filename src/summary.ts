@@ -52,9 +52,11 @@ export function readCall(
   args: { path?: string; offset?: number; limit?: number },
   max: number = DEFAULT_CLIP,
 ): string {
+  const offset = Number.isFinite(Number(args.offset)) && args.offset ? Number(args.offset) : undefined;
+  const limit = Number.isFinite(Number(args.limit)) && args.limit ? Number(args.limit) : undefined;
   const range =
-    args.offset || args.limit
-      ? theme.fg("dim", ` · lines ${args.offset ?? 1}${args.limit ? `–${(args.offset ?? 1) + args.limit - 1}` : "+"}`)
+    offset || limit
+      ? theme.fg("dim", ` · lines ${offset ?? 1}${limit ? `–${(offset ?? 1) + limit - 1}` : "+"}`)
       : "";
   return title(theme, "Read") + theme.fg("accent", compactPath(args.path ?? "", max)) + range;
 }

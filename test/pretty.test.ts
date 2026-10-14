@@ -11,8 +11,7 @@ import {
   readCall,
   readSummary,
   searchCall,
-  writeCall,
-} from "../src/summary.ts";
+  writeCall, testCountSummary } from "../src/summary.ts";
 import { colorizeDiff, diffStats, statsLabel } from "../src/diff.ts";
 import { effectiveClip } from "../src/summary.ts";
 import { DEFAULT_LIMITS, limitsFrom, preview } from "../src/preview.ts";
@@ -76,6 +75,11 @@ test("bashSummary success and failure shapes", () => {
   assert.equal(bashSummary(theme, "> build\n> tsc -p .\nsrc/a.ts:12:5: error TS2304: Cannot find name 'x'\n", true), "✗ src/a.ts:12:5: error TS2304: Cannot find name 'x'");
   assert.equal(bashSummary(theme, "Running 12 tests\nAssertionError: 1 != 2\n", true), "✗ AssertionError: 1 != 2");
   assert.equal(bashSummary(theme, "no trouble words here\nsecond", true), "✗ no trouble words here", "falls back to the first line");
+  // A failed test run reads as its score, not its first stack frame.
+  assert.equal(bashSummary(theme, "Tests: 3 failed, 240 passed, 243 total\n  at x", true), "✗ 3 failed, 240 passed");
+  assert.equal(bashSummary(theme, "=== 2 failed, 10 passed in 1.20s ===", true), "✗ 2 failed, 10 passed");
+  assert.equal(testCountSummary("All good: 15 passing"), "15 passed");
+  assert.equal(testCountSummary("no counts here"), null);
 });
 
 test("edit/write/search/list calls", () => {

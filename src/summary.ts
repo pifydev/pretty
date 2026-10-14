@@ -130,6 +130,29 @@ export function errorLine(output: string): string | undefined {
   return lines.find((l) => TROUBLE.test(l) || CAMEL_ERROR.test(l)) ?? lines.find((l) => l.trim());
 }
 
+/**
+ * A test runner's own count line, normalised to `N failed, M passed`, or null.
+ * Matches the common text reporters (Jest `Tests: 3 failed, 240 passed`, pytest
+ * `=== 3 failed, 240 passed in 2.5s ===`, vitest/mocha `3 failing / 240
+ * passing`), so a failed test run reads as its score on the collapsed row
+ * rather than as its first stack frame.
+ */
+export function testCountSummary(output: string): string | null {
+  let failed: number | null = null;
+  let passed: number | null = null;
+  const take = (re: RegExp): number | null => {
+    const m = re.exec(output);
+    return m ? Number(m[1]) : null;
+  };
+  failed = take(/(\d+)\s+(?:failed|failing)\b/i);
+  passed = take(/(\d+)\s+(?:passed|passing)\b/i);
+  if (failed === null && passed === null) return null;
+  const parts: string[] = [];
+  if (failed) parts.push(`${failed} failed`);
+  if (passed) parts.push(`${passed} passed`);
+  return parts.length > 0 ? parts.join(", ") : null;
+}
+
 export function bashSummary(
   theme: ThemeLike,
   output: string,
@@ -138,7 +161,9 @@ export function bashSummary(
   durationMs?: number,
 ): string {
   if (failed) {
-    const first = errorLine(output)?.trim() ?? "Command failed";
+    // A failed test run reads best as its score; otherwise the line that names the trouble.
+    const counts = testCountSummary(output);
+    const first = counts ?? errorLine(output)?.trim() ?? "Command failed";
     // "✗ " is two columns the clip must leave room for.
     return theme.fg("error", `✗ ${failureLine(first, max, 2)}`);
   }

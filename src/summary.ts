@@ -114,6 +114,22 @@ export function formatDuration(ms: number): string {
  * hands renderers since 1.1 (`context.durationMs`); it rides on a success
  * only, so the failure line keeps its clip guarantee.
  */
+/**
+ * A line that names trouble: the words a log uses for it, a stack frame, a
+ * compiler location, a camelCase error type (AssertionError, not "terror").
+ * The failure row shows the first such line rather than the first line of
+ * output, which for a build is usually a banner (caveman's importance regex).
+ */
+const TROUBLE =
+  /\b(?:ERROR|FATAL|PANIC|EXCEPTION|TRACEBACK|FAIL|FAILED|FAILURE)\b|^\s+at\s|^\s+File "|:\d+:\d+:|caused by|\bexit (?:status|code) [1-9]/i;
+const CAMEL_ERROR = /\b[A-Za-z]+(?:Error|Exception)\b/;
+
+/** The line of a failed command's output worth showing: the first that names trouble, else the first non-empty one. */
+export function errorLine(output: string): string | undefined {
+  const lines = output.split("\n");
+  return lines.find((l) => TROUBLE.test(l) || CAMEL_ERROR.test(l)) ?? lines.find((l) => l.trim());
+}
+
 export function bashSummary(
   theme: ThemeLike,
   output: string,
@@ -122,7 +138,7 @@ export function bashSummary(
   durationMs?: number,
 ): string {
   if (failed) {
-    const first = output.split("\n").find((l) => l.trim()) ?? "Command failed";
+    const first = errorLine(output)?.trim() ?? "Command failed";
     // "✗ " is two columns the clip must leave room for.
     return theme.fg("error", `✗ ${failureLine(first, max, 2)}`);
   }

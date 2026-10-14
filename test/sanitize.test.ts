@@ -4,6 +4,13 @@ import { sanitizeOutput, tidyPreview } from "../src/sanitize.ts";
 
 const ESC = "\x1b";
 
+test("a carriage-return redraw keeps its last frame instead of every frame", () => {
+  assert.equal(sanitizeOutput("10%\r20%\r100% done\nnext"), "100% done\nnext");
+  const frames = Array.from({ length: 500 }, (_, i) => `${ESC}[2K\r${i}/500`).join("");
+  assert.equal(sanitizeOutput(frames), "499/500");
+  assert.equal(sanitizeOutput("a\r\nb"), "a\nb", "CRLF keeps the content");
+});
+
 test("SGR colour escapes are kept", () => {
   const s = `${ESC}[31mred${ESC}[39m and ${ESC}[1mbold${ESC}[0m`;
   assert.equal(sanitizeOutput(s), s);
@@ -20,8 +27,8 @@ test("OSC (window title / hyperlink) is stripped", () => {
   assert.equal(sanitizeOutput(`${ESC}]0;title\x07text`), "text"); // BEL-terminated
 });
 
-test("carriage returns and other control chars go, newline and tab stay", () => {
-  assert.equal(sanitizeOutput("progress\rdone"), "progressdone");
+test("a carriage return resolves to the last frame; other control chars go, newline and tab stay", () => {
+  assert.equal(sanitizeOutput("progress\rdone"), "done");
   assert.equal(sanitizeOutput("a\x00b\x07c"), "abc");
   assert.equal(sanitizeOutput("line1\nline2\tcol"), "line1\nline2\tcol");
 });

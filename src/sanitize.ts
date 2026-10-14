@@ -21,6 +21,25 @@
 
 const ESC = "\x1b";
 
+/**
+ * A bare carriage return rewinds the cursor: `10%\r20%\r100%` only ever
+ * displayed `100%`. Deleting the `\r` (what the control strip below would do)
+ * concatenates every frame; keeping the last non-empty segment of each line
+ * shows what the terminal showed (caveman's terminal compressor).
+ */
+export function collapseCarriageReturns(text: string): string {
+  if (!text.includes("\r")) return text;
+  return text
+    .split("\n")
+    .map((line) => {
+      if (!line.includes("\r")) return line;
+      let chosen = "";
+      for (const segment of line.split("\r")) if (segment.length > 0) chosen = segment;
+      return chosen;
+    })
+    .join("\n");
+}
+
 // An OSC string: ESC ] … terminated by BEL or ST (ESC \).
 const OSC = new RegExp(`${ESC}\\][\\s\\S]*?(?:\\x07|${ESC}\\\\)`, "g");
 // Any CSI sequence: ESC [ params intermediates final. Kept only when final is 'm'.
@@ -49,9 +68,11 @@ const CONTROL = /[\x00-\x08\x0b-\x1a\x1c-\x1f\x7f-\x9f]/g;
  */
 export function sanitizeOutput(text: string): string {
   if (!text) return text;
-  return text
-    .replace(OSC, "")
-    .replace(CSI, (seq, final: string) => (final === "m" ? seq : ""))
+  return collapseCarriageReturns(
+    text
+      .replace(OSC, "")
+      .replace(CSI, (seq, final: string) => (final === "m" ? seq : "")),
+  )
     .replace(LONE_ESC, "")
     .replace(CONTROL, "")
     .replace(BIDI, "");

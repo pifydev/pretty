@@ -27,6 +27,8 @@ Expand with pi's standard toggle (Ctrl+O on a tool block). **Ctrl+Shift+O** togg
 
 Output rendered into these compact rows is first stripped of everything but colour: a build tool's progress bar (cursor moves, erase-line, carriage returns) or a program that sets the window title would otherwise scribble over the row or the rest of the transcript. Only SGR colour survives, and runs of blank lines are collapsed — display only, the result the model sees is pi's own, untouched.
 
+A failed `bash` row shows the line that names the trouble — the first `error`/`FAILED`/`Traceback`/stack-frame/`path:12:5:`/`FooError` line — rather than the first line of output, which for a build is usually a banner. And a carriage-return progress bar is resolved to its last frame instead of having every frame concatenated into one line (both from caveman's log compressors).
+
 On pi 1.1 and later the collapsed `bash` line also carries how long the command ran (`✓ 12 output lines · 4.2s`), from the execution time pi records with the result, so a slow step reads as slow without expanding it; pi's own row says the same as `Took`.
 
 ## Seeing what actually changed

@@ -72,6 +72,10 @@ test("bashSummary success and failure shapes", () => {
   assert.equal(bashSummary(theme, "", false, 100, Number.NaN), "✓ done", "a missing or unusable duration shows nothing");
   assert.doesNotMatch(bashSummary(theme, "boom", true, 100, 4200), /4\.2s/, "the failure line keeps its clip guarantee");
   assert.equal(bashSummary(theme, "boom: exit 1", true), "✗ boom: exit 1");
+  // The failure row shows the line that names the trouble, not the banner above it.
+  assert.equal(bashSummary(theme, "> build\n> tsc -p .\nsrc/a.ts:12:5: error TS2304: Cannot find name 'x'\n", true), "✗ src/a.ts:12:5: error TS2304: Cannot find name 'x'");
+  assert.equal(bashSummary(theme, "Running 12 tests\nAssertionError: 1 != 2\n", true), "✗ AssertionError: 1 != 2");
+  assert.equal(bashSummary(theme, "no trouble words here\nsecond", true), "✗ no trouble words here", "falls back to the first line");
 });
 
 test("edit/write/search/list calls", () => {

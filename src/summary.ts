@@ -16,6 +16,17 @@ function title(theme: ThemeLike, name: string): string {
 export const DEFAULT_CLIP = 100;
 
 /**
+ * The muted "(ctrl+o to expand)" suffix a collapsed row carries when its body
+ * stays hidden until the user expands it. `key` is the host's configured key
+ * for the `app.tools.expand` binding (pi >= 1.5.0); when it is empty or absent
+ * — older pi, or the binding has no key — the suffix is empty and the row reads
+ * exactly as before.
+ */
+export function expandHint(theme: ThemeLike, key: string | undefined): string {
+  return key ? theme.fg("dim", ` (${key} to expand)`) : "";
+}
+
+/**
  * Room the summary line actually has, which is not the same as the number in
  * the settings. A one-line summary that is wider than the terminal wraps to
  * two, and the whole point of collapsing a tool call was that it took one.

@@ -62,6 +62,7 @@ import {
   clip,
   editCall,
   effectiveClip,
+  expandHint as expandHintSuffix,
   failureLine,
   listCall,
   matchSummary,
@@ -338,6 +339,20 @@ export default function pretty(pi: ExtensionAPI) {
     toolCallId?: string;
     argsComplete?: boolean;
     executionStarted?: boolean;
+    /** The host's key for a keybinding id, e.g. "ctrl+o" (pi >= 1.5.0; absent on older pi). */
+    keyText?: (keybinding: string) => string;
+  }
+
+  /**
+   * A muted "(ctrl+o to expand)" suffix for a collapsed row whose body stays
+   * hidden until the user expands it. pi >= 1.5.0 passes the host's keybinding
+   * helpers on the render context; older pi omits them, so the hint simply does
+   * not appear and the row reads exactly as before. The key shown is the user's
+   * configured one — the same `app.tools.expand` binding pi's own rows hint —
+   * never a hardcoded guess.
+   */
+  function expandHint(theme: ThemeLike, ctx: { keyText?: (k: string) => string } | undefined): string {
+    return expandHintSuffix(theme, ctx?.keyText?.("app.tools.expand"));
   }
 
   function pstate(ctx: RenderCtx | undefined): PreviewState {
@@ -444,7 +459,7 @@ export default function pretty(pi: ExtensionAPI) {
             result: unknown,
             options: { expanded?: boolean; isPartial?: boolean },
             theme: ThemeLike,
-            context?: { args?: { path?: string } },
+            context?: { args?: { path?: string }; keyText?: (k: string) => string },
           ) => {
             if (options.isPartial) return new Text(theme.fg("warning", "Reading…"), 0, 0);
             // Strip any non-SGR escapes a file's bytes might carry so they
@@ -456,7 +471,10 @@ export default function pretty(pi: ExtensionAPI) {
                 ? result.details.truncation.truncated === true
                 : false;
             const summary = readSummary(theme, output, truncated, failed, clipWidth());
-            if (!options.expanded || failed) return new Text(summary, 0, 0);
+            if (!options.expanded || failed) {
+              const hint = !failed && output.trim() ? expandHint(theme, context) : "";
+              return new Text(summary + hint, 0, 0);
+            }
             // pi's read result carries no path in details (only { truncation }),
             // so the language has to come from the call args, which pi passes as
             // the 4th render-context argument — the same source the edit renderer
@@ -484,7 +502,7 @@ export default function pretty(pi: ExtensionAPI) {
             result: unknown,
             options: { expanded?: boolean; isPartial?: boolean },
             theme: ThemeLike,
-            context?: { durationMs?: number },
+            context?: { durationMs?: number; keyText?: (k: string) => string },
           ) => {
             // Build output and progress bars are full of cursor moves,
             // erase-line and carriage returns; strip all but colour and tidy
@@ -498,7 +516,8 @@ export default function pretty(pi: ExtensionAPI) {
             // compact line shows it where pi's own row would say "Took".
             const summary = bashSummary(theme, output, failed, clipWidth(), context?.durationMs);
             const body = output && (options.expanded || failed) ? `\n${preview(output, options.expanded === true, bodyLimits())}` : "";
-            return new Text(summary + body, 0, 0);
+            const hint = !options.expanded && !failed && output.trim() ? expandHint(theme, context) : "";
+            return new Text(summary + body + hint, 0, 0);
           },
         };
       case "edit":
@@ -580,6 +599,7 @@ export default function pretty(pi: ExtensionAPI) {
             result: unknown,
             options: { expanded?: boolean; isPartial?: boolean },
             theme: ThemeLike,
+            context?: { keyText?: (k: string) => string },
           ) => {
             if (options.isPartial) return new Text(theme.fg("warning", "Searching…"), 0, 0);
             const output = tidyPreview(sanitizeOutput(textContent(result)));
@@ -591,7 +611,10 @@ export default function pretty(pi: ExtensionAPI) {
               tool === "grep" ? { one: "match", many: "matches" } : { one: "result", many: "results" },
               clipWidth(),
             );
-            if (!options.expanded || failed || !output) return new Text(summary, 0, 0);
+            if (!options.expanded || failed || !output) {
+              const hint = !failed && output.trim() ? expandHint(theme, context) : "";
+              return new Text(summary + hint, 0, 0);
+            }
             return new Text(`${summary}\n${preview(output, true, bodyLimits())}`, 0, 0);
           },
         };
@@ -602,12 +625,16 @@ export default function pretty(pi: ExtensionAPI) {
             result: unknown,
             options: { expanded?: boolean; isPartial?: boolean },
             theme: ThemeLike,
+            context?: { keyText?: (k: string) => string },
           ) => {
             if (options.isPartial) return new Text(theme.fg("warning", "Listing…"), 0, 0);
             const output = tidyPreview(sanitizeOutput(textContent(result)));
             const failed = isFailed(result);
             const summary = matchSummary(theme, output, failed, { one: "entry", many: "entries" }, clipWidth());
-            if (!options.expanded || failed) return new Text(summary, 0, 0);
+            if (!options.expanded || failed) {
+              const hint = !failed && output.trim() ? expandHint(theme, context) : "";
+              return new Text(summary + hint, 0, 0);
+            }
             return new Text(`${summary}\n${preview(output, true, bodyLimits())}`, 0, 0);
           },
         };
@@ -672,7 +699,12 @@ export default function pretty(pi: ExtensionAPI) {
         const subject = clip(genericArgPreview(args), clipWidth());
         return new Text(subject ? head + theme.fg("accent", subject) : head.trimEnd(), 0, 0);
       },
-      renderResult: (result: unknown, options: { expanded?: boolean; isPartial?: boolean }, theme: ThemeLike) => {
+      renderResult: (
+        result: unknown,
+        options: { expanded?: boolean; isPartial?: boolean },
+        theme: ThemeLike,
+        context?: { keyText?: (k: string) => string },
+      ) => {
         if (options.isPartial) return new Text(theme.fg("warning", "Running…"), 0, 0);
         const output = tidyPreview(sanitizeOutput(textContent(result)));
         if (isFailed(result)) {
@@ -682,7 +714,8 @@ export default function pretty(pi: ExtensionAPI) {
         const summary =
           theme.fg("success", "✓") + theme.fg("dim", lines > 0 ? ` ${lines} output ${lines === 1 ? "line" : "lines"}` : " done");
         const body = output && options.expanded ? `\n${preview(output, true, bodyLimits())}` : "";
-        return new Text(summary + body, 0, 0);
+        const hint = !options.expanded && output.trim() ? expandHint(theme, context) : "";
+        return new Text(summary + body + hint, 0, 0);
       },
     };
   }

@@ -6,6 +6,7 @@ import {
   bashCall,
   bashSummary,
   editCall,
+  expandHint,
   listCall,
   matchSummary,
   readCall,
@@ -44,6 +45,15 @@ test("readCall shows path and range", () => {
   // A value that is not a number at all must not reach the range
   assert.ok(readCall(theme, { path: "a", offset: "abc" as unknown as number, limit: 5 }).includes("lines 1–5"));
   assert.ok(readCall(theme, { path: "a", offset: 3, limit: "abc" as unknown as number }).includes("lines 3+"));
+});
+
+test("expandHint shows the host's key only when one is configured", () => {
+  // pi >= 1.5.0 hands the configured key; the suffix carries it verbatim.
+  assert.equal(expandHint(theme, "ctrl+o"), " (ctrl+o to expand)");
+  assert.equal(expandHint(theme, "ctrl+shift+e"), " (ctrl+shift+e to expand)");
+  // Older pi (no keyText) or an unbound binding → no suffix, row unchanged.
+  assert.equal(expandHint(theme, undefined), "");
+  assert.equal(expandHint(theme, ""), "");
 });
 
 test("readSummary counts lines, flags truncation and failure", () => {
